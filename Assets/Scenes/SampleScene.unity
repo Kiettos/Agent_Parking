@@ -476,8 +476,8 @@ MonoBehaviour:
   m_Script: {fileID: 11500000, guid: 4470f30f49d740c41aba45cd2a8b44a8, type: 3}
   m_Name: 
   m_EditorClassIdentifier: Assembly-CSharp::JsonMapBuilder
-  tileMapping: {fileID: 0}
-  objectMapping: {fileID: 0}
+  tileMapping: {fileID: 11400000, guid: 20fb968e1eed8dc4fb4d416059ead33f, type: 2}
+  objectMapping: {fileID: 11400000, guid: e308e2f383b6b5d4ea331f7a3765f0ac, type: 2}
   mapName: VuongGoc
   mapFile: maps/maps_and_objects
   spawnPosition: {x: 0, y: 0, z: 0}
@@ -493,6 +493,22 @@ PrefabInstance:
     - target: {fileID: 2942410058395010702, guid: c68fefebc9a8a1844a44f460c6996791, type: 3}
       propertyPath: m_Name
       value: CarAgent
+      objectReference: {fileID: 0}
+    - target: {fileID: 4706486363917022198, guid: c68fefebc9a8a1844a44f460c6996791, type: 3}
+      propertyPath: m_Size.x
+      value: 1.84
+      objectReference: {fileID: 0}
+    - target: {fileID: 4706486363917022198, guid: c68fefebc9a8a1844a44f460c6996791, type: 3}
+      propertyPath: m_Size.y
+      value: 1.17
+      objectReference: {fileID: 0}
+    - target: {fileID: 4706486363917022198, guid: c68fefebc9a8a1844a44f460c6996791, type: 3}
+      propertyPath: m_Size.z
+      value: 4.36
+      objectReference: {fileID: 0}
+    - target: {fileID: 4706486363917022198, guid: c68fefebc9a8a1844a44f460c6996791, type: 3}
+      propertyPath: m_Center.y
+      value: 0.58
       objectReference: {fileID: 0}
     - target: {fileID: 5854933537252605320, guid: c68fefebc9a8a1844a44f460c6996791, type: 3}
       propertyPath: m_LocalPosition.x
