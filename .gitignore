@@ -1,0 +1,39 @@
+# --- Unity Auto-generated folders ---
+/Library/
+/Temp/
+/Obj/
+/Build/
+/Builds/
+/Logs/
+/UserSettings/
+
+# --- Memory captured by crash reports ---
+/[Mm]emoryCaptures/
+
+# --- Visual Studio / Rider / VS Code files ---
+.vs/
+.idea/
+.vscode/
+*.csproj
+*.unityproj
+*.sln
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+.vsconfig
+
+# --- OS generated files ---
+.DS_Store
+Thumbs.db
+
+# --- Python Cache (Cho thư mục Tools của bạn) ---
+__pycache__/
+*.py[cod]
+venv/

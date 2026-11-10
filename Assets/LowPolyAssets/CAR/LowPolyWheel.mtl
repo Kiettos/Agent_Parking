@@ -1,0 +1,12 @@
+newmtl Tire
+Kd 0.08 0.08 0.08
+Ka 0 0 0
+Ks 0 0 0
+d 1
+
+newmtl Rim
+Kd 0.8 0.8 0.82
+Ka 0 0 0
+Ks 0 0 0
+d 1
+
