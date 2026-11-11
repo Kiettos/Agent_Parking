@@ -3,7 +3,17 @@ guid: bc8a31f4d6f6e3d4aaa6ab271092b9f7
 ModelImporter:
   serializedVersion: 24600
   internalIDToNameTable: []
-  externalObjects: {}
+  externalObjects:
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: ConcreteBorderMat
+    second: {fileID: 2100000, guid: b7af3d00fe6bddb40a505ade9419e7c3, type: 2}
+  - first:
+      type: UnityEngine:Material
+      assembly: UnityEngine.CoreModule
+      name: SoilMaterialMat
+    second: {fileID: 2100000, guid: eaad8bce738c1a947a6615040f9e8765, type: 2}
   materials:
     materialImportMode: 2
     materialName: 0

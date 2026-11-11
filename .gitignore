@@ -6,9 +6,7 @@
 /Builds/
 /Logs/
 /UserSettings/
-
-# --- Memory captured by crash reports ---
-/[Mm]emoryCaptures/
+/MemoryCaptures/
 
 # --- Visual Studio / Rider / VS Code files ---
 .vs/
@@ -33,7 +31,12 @@
 .DS_Store
 Thumbs.db
 
-# --- Python Cache (Cho thư mục Tools của bạn) ---
+# --- Python Cache & Virtual Environments ---
 __pycache__/
 *.py[cod]
 venv/
+.venv/
+
+# --- Temporary Files ---
+*.tmp
+*.log
