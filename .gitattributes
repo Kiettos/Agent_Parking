@@ -6,3 +6,21 @@
 *.asset merge=unityyamlmerge eol=lf
 *.meta merge=unityyamlmerge eol=lf
 *.controller merge=unityyamlmerge eol=lf
+
+# 1. Ép GitHub chỉ đếm code C# và Python
+*.cs linguist-language=C#
+*.py linguist-language=Python
+
+# 2. Ẩn hoàn toàn các file dữ liệu của Unity
+*.prefab linguist-detectable=false
+*.unity linguist-detectable=false
+*.asset linguist-detectable=false
+*.meta linguist-detectable=false
+*.mat linguist-detectable=false
+*.anim linguist-detectable=false
+
+# 3. Ẩn các file cấu hình (thường bị nhầm là XML/YAML/HTML)
+*.xml linguist-detectable=false
+*.yaml linguist-detectable=false
+*.json linguist-detectable=false
+*.html linguist-detectable=false
