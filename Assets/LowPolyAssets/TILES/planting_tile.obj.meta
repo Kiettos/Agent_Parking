@@ -8,7 +8,7 @@ ModelImporter:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
       name: ConcreteBorderMat
-    second: {fileID: 2100000, guid: b7af3d00fe6bddb40a505ade9419e7c3, type: 2}
+    second: {fileID: 2100000, guid: 3a13c32727983af45a79840aed0ce132, type: 2}
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
