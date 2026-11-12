@@ -14,10 +14,18 @@ MonoBehaviour:
   m_EditorClassIdentifier: Assembly-CSharp::ObjectMappingSO
   entries:
   - symbol: 76
-    prefab: {fileID: 919132149155446097, guid: c11f7e265163bf14f9ebf768596562ca, type: 3}
+    prefab: {fileID: 919132149155446097, guid: 76526b07dd432ea42a7cb9da253f67c0, type: 3}
     isObstacle: 0
     rotationOffset: {x: 0, y: 0, z: 0}
   - symbol: 66
-    prefab: {fileID: 919132149155446097, guid: 6bf2757c62df20d4ea040aa51ab7420a, type: 3}
+    prefab: {fileID: 919132149155446097, guid: ff7e9d96483b25b47bee3c1b3245effa, type: 3}
+    isObstacle: 0
+    rotationOffset: {x: 0, y: 0, z: 0}
+  - symbol: 83
+    prefab: {fileID: 7673064698298229324, guid: 5e73ebca01a829f479f780fff6537e92, type: 3}
+    isObstacle: 0
+    rotationOffset: {x: 0, y: 0, z: 0}
+  - symbol: 84
+    prefab: {fileID: 5549289154159432276, guid: e95c1a4355573e24985fdde1f6b5ce1e, type: 3}
     isObstacle: 0
     rotationOffset: {x: 0, y: 0, z: 0}
