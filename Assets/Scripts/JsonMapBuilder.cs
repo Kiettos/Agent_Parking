@@ -89,14 +89,35 @@ public class JsonMapBuilder : MonoBehaviour
                 Vector3 pos = new Vector3(c * map.cellSize, 0, (rows - 1 - r) * map.cellSize);
 
                 // ----- LỚP 1: TILE -----
+                               // ----- LỚP 1: TILE -----
                 char tileChar = map.tiles[r][c];
-                if (tileDict.TryGetValue(tileChar, out var tilePrefab) && tilePrefab != null)
+                if (tileDict.TryGetValue(tileChar, out GameObject tilePrefab) && tilePrefab != null)
                 {
                     GameObject tile = Instantiate(tilePrefab, transform);
                     tile.transform.localPosition = pos;
                     tile.name = $"Tile_{r}_{c}_{tileChar}";
-                }
 
+                    // --- ĐOẠN CODE TÍNH SCALE FACTOR CHUẨN ---
+                    if (r == 0 && c == 0) 
+                    {
+                        Renderer[] renderers = tile.GetComponentsInChildren<Renderer>();
+                        if (renderers.Length > 0)
+                        {
+                            Bounds b = renderers[0].bounds;
+                            foreach (var ren in renderers) b.Encapsulate(ren.bounds);
+                            
+                            // Kích thước hiện tại của viên gạch
+                            float currentSize = Mathf.Max(b.size.x, b.size.z);
+                            
+                            // Tính toán Scale Factor cần thiết để kích thước = cellSize (thường là 1)
+                            float requiredScale = map.cellSize / currentSize;
+                            
+                            Debug.Log($"<color=cyan>Kích thước hiện tại: {b.size.x:F2} x {b.size.z:F2} mét</color>");
+                            Debug.Log($"<color=green>=> BẠN CẦN NHẬP SCALE FACTOR LÀ: {requiredScale:F2}</color>");
+                        }
+                    }
+                    // -----------------------------------------
+                }
                 // ----- LỚP 2: OBJECT -----
                 char objChar = (c < objRow.Length) ? objRow[c] : '-';
                 if (objChar != '-' && objDict.TryGetValue(objChar, out var objPrefab) && objPrefab != null)
