@@ -3,7 +3,7 @@
     {
       "name": "VuongGoc",
       "displayName": "Dạng 1 — Bãi đỗ vuông góc",
-      "cellSize": 1.0,
+      "cellSize": 6.0,
       "tiles": [
         "RRRRRRRRRRRRRRRRRRRR",
         "RRHHHHHHHHHHHHHHHHHH",
@@ -52,7 +52,7 @@
     {
       "name": "Cheo",
       "displayName": "Dạng 2 — Bãi đỗ chéo",
-      "cellSize": 1.0,
+      "cellSize":  6.0,
       "tiles": [
         "RRRRRRRRRRRRRRRRRRRR",
         "RRHHHHHHHHHHHHHHHHHH",
@@ -101,7 +101,7 @@
     {
       "name": "SongSong",
       "displayName": "Dạng 3 — Bãi đỗ song song",
-      "cellSize": 1.0,
+      "cellSize":  6.0,
       "tiles": [
         "RRRRRRRRRRRRRRRRRRRR",
         "RRHHHHHHHHHHHHHHHHHH",
@@ -150,7 +150,7 @@
     {
       "name": "HonHop",
       "displayName": "Dạng 5 — Bãi đỗ hỗn hợp ziczac",
-      "cellSize": 1.0,
+      "cellSize":  6.0,
       "tiles": [
         "RRRRRRRRRRRRRRRRRRRR",
         "RRHHHHHHHHHHHHHHHHHH",

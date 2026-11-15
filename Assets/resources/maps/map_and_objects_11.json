@@ -1,0 +1,35 @@
+{
+  "maps": [
+    {
+      "name": "VuongGoc",
+      "displayName": "Dạng 1 — Vuông góc 11x11 (Có cổng)",
+      "cellSize": 6.0,
+      "tiles": [
+        "RRRRRRRRRRR",
+        "RGHHHHHHHGR",
+        "RHCPPPCPPHR",
+        "RHCPPPCPPHR",
+        "RHCCCCCCCHR",
+        "RCCCCCCCCCR",
+        "RCCCCCCCCCR",
+        "RHCPPPCPPHR",
+        "RHCPPPCPPHR",
+        "RGHHHHHHHGR",
+        "RRRRRRRRRRR"
+      ],
+      "objects": [
+        "-----------",
+        "-B-------B-",
+        "--L-----L--",
+        "-----------",
+        "-----------",
+        "-----------",
+        "-----------",
+        "-----T-----",
+        "--L-----L--",
+        "-----------",
+        "-----------"
+      ]
+    }
+  ]
+}

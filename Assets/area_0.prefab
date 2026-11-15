@@ -47,6 +47,6 @@ MonoBehaviour:
   tileMapping: {fileID: 11400000, guid: 20fb968e1eed8dc4fb4d416059ead33f, type: 2}
   objectMapping: {fileID: 11400000, guid: e308e2f383b6b5d4ea331f7a3765f0ac, type: 2}
   mapName: VuongGoc
-  mapFile: maps/maps_and_objects
+  mapFile: maps/maps_and_objects_11
   spawnPosition: {x: 0, y: 0, z: 0}
   targetPosition: {x: 0, y: 0, z: 0}
