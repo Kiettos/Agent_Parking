@@ -1,0 +1,597 @@
+﻿================================================================================
+  TÀI LIỆU CHUYỂN GIAO — AI AGENT PARKING (Unity ML-Agents)
+  Mục đích: nạp cho AI khác để tiếp tục làm việc, không cần đọc lại source.
+  Cấu trúc: PHẦN A = lý thuyết chung (tái dùng cho mọi project ML-Agents)
+            PHẦN B = bản đồ project    PHẦN C = API từng file / từng hàm
+            PHẦN D = schema dữ liệu    PHẦN E = hợp đồng bắt buộc
+================================================================================
+
+
+################################################################################
+PHẦN A — LÝ THUYẾT CHUNG
+################################################################################
+
+--------------------------------------------------------------------------------
+A1. VÒNG LẶP HỌC TĂNG CƯỜNG (RL)
+--------------------------------------------------------------------------------
+Agent quan sát trạng thái → chọn hành động → môi trường trả reward + trạng thái mới
+→ lặp đến khi episode kết thúc. Mục tiêu: tối đa tổng reward chiết khấu.
+
+  state s      : thông tin môi trường (ở đây = vector observation 11 số)
+  action a     : điều khiển (ở đây = 3 số liên tục: ga, lái, phanh)
+  reward r     : điểm thưởng/phạt mỗi bước
+  episode      : một lần chơi từ reset đến khi kết thúc (đỗ xong / va chạm / quá xa)
+  policy π(a|s): hàm agent học được, ánh xạ trạng thái → phân phối hành động
+  return G     : tổng reward có chiết khấu từ bước t đến cuối episode
+  γ (gamma)    : hệ số chiết khấu, 0.99 ≈ nhìn xa 100 bước
+
+--------------------------------------------------------------------------------
+A2. PPO (Proximal Policy Optimization)
+--------------------------------------------------------------------------------
+Thuật toán on-policy: thu thập dữ liệu theo policy hiện tại, cập nhật policy nhưng
+GIỚI HẠN mức thay đổi (clip) để không phá policy đột ngột.
+
+Các siêu tham số và ý nghĩa:
+  batch_size        số mẫu mỗi lần cập nhật gradient
+  buffer_size       số bước thu thập trước khi học; nên bằng bội số của batch_size
+  learning_rate     tốc độ học; schedule linear = giảm dần trong quá trình train
+  beta              hệ số entropy bonus → càng lớn càng khuyến khích khám phá
+  epsilon           biên clip của PPO (0.2 là chuẩn)
+  lambd             hệ số GAE (0.95 chuẩn) — cân bằng bias/variance của advantage
+  num_epoch         số lần lặp trên cùng một batch
+  time_horizon      số bước mỗi agent thu thập trước khi tính advantage
+  max_steps         tổng số bước train; dừng khi đạt
+  normalize         chuẩn hoá observation (rất nên bật)
+  hidden_units/layers  kích thước mạng policy và value
+
+--------------------------------------------------------------------------------
+A3. THÀNH PHẦN ML-AGENTS (Unity)
+--------------------------------------------------------------------------------
+  Agent                : lớp cơ sở; override 4 hàm: Initialize, OnEpisodeBegin,
+                         CollectObservations, OnActionReceived (+ Heuristic để test tay)
+  BehaviorParameters   : khai báo KÍCH THƯỚC observation và action; PHẢI khớp
+                         tuyệt đối với code. Có Behavior Name (nối với file yaml),
+                         Model (file .onnx để inference), Behavior Type.
+  DecisionRequester    : cứ mỗi DecisionPeriod bước vật lý thì hỏi agent 1 lần.
+                         TakeActionsBetweenDecisions = giữ nguyên action giữa các lần hỏi.
+  Sensor               : nguồn observation (VectorSensor hoặc RayPerceptionSensor)
+  Actuator             : nơi nhận action (ActionBuffers)
+  Academy              : quản lý vòng lặp môi trường, reset, tốc độ mô phỏng
+  Communicator         : cầu nối với mlagents-learn khi train
+  mlagents-learn       : chương trình train bên ngoài Unity, đọc file yaml
+  TensorBoard          : xem đường học (Cumulative/Episode Reward, Loss, Entropy)
+  .onnx                : model đã train, gắn vào BehaviorParameters để chạy không cần trainer
+
+Điều kiện tối thiểu để một agent chạy:
+  1) VectorObservationSize (Inspector) == số float code gửi đi
+  2) Số continuous/discrete action (Inspector) == số phần tử code ghi vào
+  3) Mỗi object chỉ 1 BehaviorParameters
+  4) Behavior Name khớp key trong file yaml khi train
+  5) Agent nằm dưới một object quản lý episode (ở đây là TrainingArea)
+
+--------------------------------------------------------------------------------
+A4. KHÁI NIỆM UNITY CẦN BIẾT
+--------------------------------------------------------------------------------
+  MonoBehaviour lifecycle (thứ tự):
+    Awake → OnEnable → Start → [FixedUpdate → Update → LateUpdate] lặp lại → OnDisable
+    Awake chạy 1 lần khi object được tạo/kích hoạt, TRƯỚC mọi Start.
+    FixedUpdate chạy theo nhịp vật lý (mặc định 50 Hz) → mọi thứ liên quan
+    Rigidbody/WheelCollider phải đặt ở đây.
+    LateUpdate dùng để đồng bộ hình ảnh sau khi vật lý đã tính xong.
+
+  Prefab asset vs instance:
+    Prefab trong thư mục Assets là BẢN MẪU. Object trong Hierarchy là INSTANCE.
+    Sửa prefab → ảnh hưởng mọi instance (trừ phần đã bị override).
+    Component thêm trực tiếp lên instance thì KHÔNG có trong prefab.
+    Một GameObject có thể có NHIỀU component cùng loại nhưng thường là lỗi.
+
+  ScriptableObject:
+    Asset chỉ chứa DỮ LIỆU, hành vi nằm ở class C#. File .asset lưu m_Script
+    (GUID trỏ tới class). Xoá class → asset mất toàn bộ dữ liệu.
+
+  GUID / .meta:
+    Mỗi asset có 1 file .meta chứa GUID. Unity tham chiếu asset bằng GUID,
+    không bằng đường dẫn. Đổi tên file không làm hỏng tham chiếu.
+
+  Resources.Load(path):
+    Đọc asset theo ĐƯỜNG DẪN CHUỖI từ thư mục Resources (không cần tham chiếu).
+    Đây là ngoại lệ duy nhất dùng chuỗi path; sai tên là lỗi runtime.
+
+  Tag & Layer:
+    Tag dùng để phân loại nhanh (CompareTag). CompareTag với tag KHÔNG tồn tại
+    sẽ ném exception, không trả false.
+    Layer dùng cho Raycast/LayerMask và va chạm.
+
+  Rigidbody / WheelCollider:
+    Rigidbody chịu vật lý; centerOfMass thấp → khó lật.
+    WheelCollider mô phỏng bánh: motorTorque (ga), steerAngle (lái),
+    brakeTorque (phanh), suspensionSpring (giảm xóc).
+    GetWorldPose() lấy vị trí/góc thật của bánh để gán cho mesh hiển thị.
+
+  Input System mới: Keyboard.current.wKey.isPressed (thay cho Input.GetKey).
+
+--------------------------------------------------------------------------------
+A5. REWARD SHAPING (thiết kế phần thưởng)
+--------------------------------------------------------------------------------
+  Sparse reward: chỉ thưởng khi thành công → agent gần như không học được.
+  Dense reward : thưởng liên tục → dễ bị "farm điểm" bằng cách lặp hành vi vô ích.
+
+  Potential-based shaping (công thức an toàn, không đổi policy tối ưu):
+        F(s, s') = γ·Φ(s') − Φ(s)
+  Với Φ(s) = −khoảng_cách_đến_đích, hiệu này tương đương:
+        reward_mỗi_bước = (dist_cũ − dist_mới) · hệ_số
+  Tức: chỉ thưởng khi TIẾN GẦN đích; đứng yên không nhận gì; đi lùi bị phạt.
+  Đây chính là cách project này làm với distanceShaping và alignShaping.
+
+  Thành phần reward điển hình:
+    + tiến gần đích (dist shaping)
+    + thẳng hàng với trục đỗ (align shaping)
+    − phạt thời gian nhỏ mỗi bước (chống đứng ì)
+    + thưởng lớn khi thành công
+    − phạt lớn khi va chạm / lật / đi quá xa
+  Chú ý cân bằng: phạt thời gian quá lớn → agent lao ẩu; quá nhỏ → agent nằm im.
+
+--------------------------------------------------------------------------------
+A6. THIẾT KẾ OBSERVATION
+--------------------------------------------------------------------------------
+  Nguyên tắc:
+  - Dùng hệ quy chiếu TƯƠNG ĐỐI (so với mục tiêu) thay vì toạ độ tuyệt đối →
+    policy học được ở mọi vị trí, không học thuộc toạ độ.
+  - Chia cho một hằng số scale để giá trị rơi vào khoảng [-1, 1].
+  - Bỏ trục không dùng (ví dụ bỏ y trong bài toán mặt phẳng).
+  - Đưa vào: vị trí, hướng, vận tốc, trạng thái cơ cấu (góc lái), sai số so với đích.
+  - Không đưa vào thứ agent không thể quan sát được trong thực tế.
+
+  Lỗi thường gặp: khai báo Space Size sai → ML-Agents báo lệch số observation,
+  dữ liệu bị cắt/đệm và agent không học được.
+
+--------------------------------------------------------------------------------
+A7. CURRICULUM & CHỐNG HỌC VẸT
+--------------------------------------------------------------------------------
+  Random hoá mỗi episode (vị trí xuất phát, vật cản) → policy tổng quát hơn
+  nhưng khó học lúc đầu vì phương sai lớn.
+
+  Giữ mục tiêu trong K episode (curriculum nhẹ):
+    - Mỗi block K episode dùng CÙNG một đích + cùng một điểm xuất phát.
+    - Agent có K lần thử để tinh chỉnh cùng một bài toán → gradient ổn định hơn.
+    - Hết K thì đổi sang đích khác.
+  Chọn đích bằng "shuffle bag" (xáo trộn danh sách rồi lấy lần lượt) tốt hơn
+  random thuần: đảm bảo mọi đích đều được luyện, không bị trùng.
+
+  Đánh đổi: K lớn → học nhanh nhưng dễ học vẹt một đường đi; K nhỏ → tổng quát
+  tốt nhưng hội tụ chậm. K = 20–100 là khoảng hợp lý cho bài toán nhỏ.
+
+--------------------------------------------------------------------------------
+A8. QUY TRÌNH TRAIN & DEBUG
+--------------------------------------------------------------------------------
+  Chạy thử trong Editor:
+    1) BehaviorParameters.Behavior Type = Default, Model để trống, bấm Play
+       → agent dùng policy ngẫu nhiên (hoặc Heuristic nếu chọn Heuristic Only)
+    2) Xem console: mọi lỗi observation/action/tag đều hiện ở đây
+
+  Train thật:
+    mlagents-learn configs/<file>.yaml --run-id=<tên>
+    (bấm Play trong Unity khi trainer báo "Start training by pressing the Play button")
+    tensorboard --logdir results
+    Kết quả: results/<run-id>/<BehaviorName>.onnx + checkpoint
+
+  Chạy model đã train:
+    gắn file .onnx vào BehaviorParameters.Model, Behavior Type = Inference Only
+
+  Checklist khi agent không học:
+    [ ] Space Size / số action có khớp code không
+    [ ] Behavior Name có khớp key trong yaml không
+    [ ] Có reward âm vô hạn hoặc NaN không (log reward trung bình)
+    [ ] Episode có kết thúc được không (MaxStep = 0 là không giới hạn → nguy hiểm)
+    [ ] time_horizon có đủ dài để đi hết quãng đường không
+    [ ] Action có thực sự tác động môi trường không (ví dụ bị script khác ghi đè)
+    [ ] Có 2 component cùng điều khiển một thứ không (xung đột)
+    [ ] Vật cản/đích có collider và tag đúng không
+    [ ] Quan sát có bị hằng số (không đổi) không → agent mù thông tin đó
+
+
+################################################################################
+PHẦN B — BẢN ĐỒ PROJECT
+################################################################################
+
+Đường dẫn gốc : D:\AI_AGENT_PARKING\Agent_parking\My project (1)
+Unity          : 6000.6.8f1 | URP 17.6.0 | ML-Agents 4.1.0 | Input System 1.20.1
+Behavior name  : CarParking (PPO)
+
+Danh sách file:
+  Assets/Scripts/ParkingAgent.cs      Agent RL (obs/action/reward/kết thúc)
+  Assets/Scripts/CarController.cs     Điều khiển WheelCollider bằng lệnh số
+  Assets/Scripts/CarWheels.cs         Đồng bộ mesh bánh + đặt trọng tâm
+  Assets/Scripts/ManualDrive.cs       Lái bằng bàn phím (chỉ để test tay)
+  Assets/Scripts/WheelVisual.cs       Đồng bộ 1 bánh (bản trùng, không dùng)
+  Assets/Scripts/TrainingArea.cs      Dàn cảnh episode: đích, spawn, xe mồi
+  Assets/Scripts/JsonMapBuilder.cs    JSON → prefab, ghi toạ độ S/T + danh sách ô
+  Assets/Scripts/ParkingSlot.cs       Vùng đỗ + xe hàng xóm
+  Assets/Scripts/DecoySpawner.cs      Lấp xe mồi (pool) vào ô D và _P
+  Assets/Scripts/DecoyMarker.cs       Marker rỗng + gizmo
+  Assets/Scripts/TileMappingSO.cs     ScriptableObject char→prefab (lớp tile)
+  Assets/Scripts/ObjectMappingSO.cs   ScriptableObject char→prefab (lớp object)
+  Assets/Scripts/CarPrefabBuilder.cs  Tool dựng prefab CarAgent
+  Assets/TileMapping.asset            R H C P G → prefab
+  Assets/ObjectMapping.asset          L B S T D → prefab
+  Assets/resources/maps/*.json        Bản đồ dạng lưới ký tự
+  configs/parking_config.yaml         Cấu hình PPO
+
+Luồng chạy (10 dòng):
+  1. Scene load → JsonMapBuilder.Awake() → BuildMap()
+  2. BuildMap đọc JSON qua Resources.Load(mapFile), chọn map theo mapName
+  3. Với mỗi ô: lấy ký tự → tra dictionary (từ 2 file .asset) → Instantiate prefab
+  4. Ghi lại: spawnPosition('S'), targetPosition('T'), roadCells('R'), parkingCells('P')
+  5. Tạo xong map thì TrainingArea đã có dữ liệu
+  6. ParkingAgent.OnEpisodeBegin() → TrainingArea.ResetCar()
+  7. ResetCar bốc đích (ô P) + spawn (ô R) theo block K episode, dời slot/spawnPoint
+  8. DecoySpawner.Respawn(slot.position) lấp xe mồi vào ô D và _P (bỏ qua quanh đích)
+  9. Xe đặt tại spawn + nhiễu, vận tốc = 0
+ 10. Agent chạy → nhận reward theo khoảng cách/góc tới slot → đỗ đúng thì EndEpisode
+
+
+################################################################################
+PHẦN C — API TỪNG FILE / TỪNG HÀM
+################################################################################
+
+--------------------------------------------------------------------------------
+C1. ParkingAgent.cs  (Agent — trung tâm của bài toán)
+--------------------------------------------------------------------------------
+Kế thừa: Unity.MLAgents.Agent
+Tham chiếu cache: car(CarController), rb(Rigidbody), carBox(BoxCollider),
+                  area(TrainingArea ở cha), slot(ParkingSlot từ area),
+                  slotBox(BoxCollider của slot)
+Trạng thái: prevDist, prevAlign, parkedCount, episodeDone
+
+Field công khai (chỉnh trong Inspector):
+  successReward     2.0    thưởng khi đỗ thành công
+  collisionPenalty -1.0    phạt khi va chạm/lật/quá xa
+  timePenalty      -0.002  phạt mỗi lần ra quyết định
+  distanceShaping   0.05   hệ số thưởng khi tiến gần đích
+  alignShaping      0.05   hệ số thưởng khi thẳng hàng
+  maxAngleDeg      10      lệch góc tối đa khi tính là đỗ xong
+  maxSpeedToPark    0.3    tốc độ tối đa khi tính là đỗ xong
+  holdDecisions    10      số lần quyết định phải giữ đúng trạng thái đỗ
+  obsScale         15      hằng chia để chuẩn hoá toạ độ
+  maxDistance      40      đi xa hơn → kết thúc episode (fail)
+  debugLog         false    bật log thắng/thua
+
+Hàm:
+  Initialize()                       override; cache tham chiếu. Nếu thiếu
+                                     CarController thì tự AddComponent và nối 4 bánh
+                                     theo tên FL/FR/RL/RR, đặt updateWheelVisuals=false.
+                                     Tắt ManualDrive nếu có.
+  OnEpisodeBegin()                   override; reset cờ, ga/lái/phanh = 0, gọi
+                                     area.ResetCar(transform), đo khoảng cách ban đầu.
+  CollectObservations(VectorSensor)  override; thêm 11 số (xem E1).
+  OnActionReceived(ActionBuffers)    override; đọc 3 action liên tục → car.SetInputs.
+                                     Tính reward: (prevDist-dist)*distanceShaping
+                                     + (align-prevAlign)*alignShaping + timePenalty.
+                                     Nếu lật (up.y < 0.3) hoặc dist > maxDistance → Fail.
+                                     Nếu IsParked() thì tăng parkedCount, đủ
+                                     holdDecisions → Succeed.
+  OnCollisionEnter(Collision)        nếu collider có tag "Obstacle" → Fail.
+  Heuristic(ActionBuffers)           override; W/S ga-lùi, A/D lái, Space phanh
+                                     (dùng khi Behavior Type = Heuristic Only).
+  Succeed()                          đặt episodeDone, AddReward(successReward),
+                                     EndEpisode().
+  Fail(string)                       đặt episodeDone, AddReward(collisionPenalty),
+                                     EndEpisode().
+  SlotCenter()                       world position tâm BoxCollider của slot.
+  LongAxis()                         trục dài slot, tự chọn right/forward theo
+                                     cạnh lớn hơn của BoxCollider.
+  AngleToAxis()                      góc lệch mũi xe vs trục dài, gấp về [-90, 90]
+                                     (tiến hay lùi vào đều như nhau).
+  Measure(out dist, out align)       dist = khoảng cách mặt phẳng tới tâm slot;
+                                     align = 1 - |góc|/90 (1 = thẳng hoàn hảo).
+  IsParked()                         đúng góc, đủ chậm, và CẢ 4 GÓC thân xe
+                                     nằm trong slot.Contains().
+  Vel()                              rb.linearVelocity (Unity 6) hoặc rb.velocity
+                                     (qua #if UNITY_6000_0_OR_NEWER).
+
+--------------------------------------------------------------------------------
+C2. CarController.cs  (cầu nối lệnh số → vật lý)
+--------------------------------------------------------------------------------
+[RequireComponent(typeof(Rigidbody))]
+Field: frontLeft/frontRight/rearLeft/rearRight (WheelCollider), 4 mesh Transform,
+       maxMotorTorque 800, maxBrakeTorque 3000, idleBrake 100, maxSteerAngle 30,
+       maxSpeed 6, centerOfMass (0,-0.3,0), updateWheelVisuals true
+Nội bộ: rb, throttle, steer, brake
+
+Hàm:
+  Awake()                  cache Rigidbody, gán centerOfMass.
+  SetInputs(t, s, b)       nhận lệnh chuẩn hoá: ga -1..1, lái -1..1, phanh 0..1
+                           (clamp lại). Đây là API duy nhất agent dùng.
+  FixedUpdate()            tính speed; mô-men chỉ cấp khi speed < maxSpeed;
+                           gán motorTorque 2 bánh sau, steerAngle 2 bánh trước;
+                           phanh = brake*maxBrakeTorque, nếu không phanh và không ga
+                           thì áp idleBrake để xe không trôi.
+  Update()                 nếu updateWheelVisuals: đồng bộ mesh bánh.
+  UpdatePose(col, mesh)    static; GetWorldPose → SetPositionAndRotation.
+
+--------------------------------------------------------------------------------
+C3. CarWheels.cs  (đồng bộ hiển thị bánh + trọng tâm)
+--------------------------------------------------------------------------------
+[RequireComponent(typeof(Rigidbody))]
+Field: colliders[4], meshes[4] (thứ tự FL, FR, RL, RR), centerOfMass (0,-0.3,0)
+
+Hàm:
+  Awake()        gán rb.centerOfMass.
+  LateUpdate()   mỗi bánh: GetWorldPose → gán mesh. Chạy sau vật lý nên hình không giật.
+
+Ghi chú: trùng chức năng với CarController.UpdatePose → chỉ nên để MỘT nơi làm,
+nên đặt CarController.updateWheelVisuals = false (đã làm trong Initialize).
+
+--------------------------------------------------------------------------------
+C4. ManualDrive.cs  (lái tay để test)
+--------------------------------------------------------------------------------
+Field: fl/fr/rl/rr (WheelCollider), motorTorque 800, brakeTorque 2500,
+       idleBrake 150, maxSteerAngle 30
+
+Hàm:
+  FixedUpdate()  đọc Input.GetAxis("Vertical"/"Horizontal") + Space, ghi trực tiếp
+                 motorTorque/steerAngle/brakeTorque.
+Ghi chú: PHẢI tắt khi agent điều khiển, vì nó ghi đè mỗi bước vật lý.
+
+--------------------------------------------------------------------------------
+C5. WheelVisual.cs  (bản trùng, không dùng)
+--------------------------------------------------------------------------------
+Field: wheelCollider, visualTransform
+Hàm: Update() → GetWorldPose → gán visualTransform.
+Ghi chú: trùng vai trò CarWheels; nên xoá.
+
+--------------------------------------------------------------------------------
+C6. TrainingArea.cs  (quản lý episode)
+--------------------------------------------------------------------------------
+Field công khai:
+  builder (JsonMapBuilder)      nguồn dữ liệu map
+  decoys (DecoySpawner)         hệ xe mồi
+  slot (ParkingSlot)            vùng đỗ đang dùng
+  slotSize (2.6, 1, 4.8)        kích thước BoxCollider của slot
+  slotYaw 0                     xoay slot quanh Y
+  spawnPoint (Transform)        điểm xuất phát đang dùng
+  spawnYaw 0, spawnHeight 0.3   hướng và độ cao đặt xe
+  spawnRadius 3                 bán kính nhiễu quanh spawnPoint
+  spawnYawRange 30              độ nhiễu hướng
+  randomizeEveryEpisode true    bật chế độ bốc ngẫu nhiên
+  minSpawnDistance 8            khoảng cách tối thiểu tới đích
+  maxSpawnDistance 25           khoảng cách tối đa (phải < agent.maxDistance)
+  episodesPerTarget 50          K — số episode giữ một đích
+Nội bộ: placed, episodesAtTarget, currentTargetCell, currentSpawnCell,
+        targetBag (List), bagIndex
+
+Hàm:
+  PlaceFromMap()               [ContextMenu] chế độ cũ: đặt slot tại targetPosition('T')
+                               và spawnPoint tại spawnPosition('S'). Có chỉnh BoxCollider.
+  ResetCar(Transform car)      điều phối 1 episode: chọn chế độ (random hay cố định),
+                               gọi slot.RandomizeNeighbours(), gọi decoys.Respawn(slot.pos),
+                               cộng nhiễu ±spawnRadius/±spawnYawRange, đặt xe,
+                               zero vận tốc, Physics.SyncTransforms().
+  CanRandomize()               tìm builder nếu trống; true nếu có cả roadCells và parkingCells.
+  PickNewTarget()              lấy ô kế tiếp trong targetBag (xáo Fisher-Yates khi hết),
+                               chọn spawn tương ứng, reset bộ đếm, Debug.Log.
+  ForceNewTarget()             [ContextMenu] ép đổi đích ngay (test).
+  PlaceForEpisode()            [ContextMenu] guard dữ liệu; bốc đích mới khi hết K;
+                               dời slot (TransformPoint + slotYaw); chỉnh BoxCollider;
+                               dời spawnPoint. Tăng episodesAtTarget.
+  PickRoadCell(localTarget)    thử ngẫu nhiên 60 lần trong [min,max]; nếu không có
+                               thì lấy ô gần khoảng mong muốn nhất.
+  OnDrawGizmosSelected()       vẽ bán kính spawn trong Scene view.
+
+Thứ tự quan trọng trong ResetCar: đổi đích → dời slot → RandomizeNeighbours →
+decoys.Respawn(slot.position) → đặt xe. Respawn phải chạy SAU khi slot đã dời.
+
+--------------------------------------------------------------------------------
+C7. JsonMapBuilder.cs  (dựng map từ JSON)
+--------------------------------------------------------------------------------
+Class dữ liệu:
+  MapCollection { MapData[] maps }
+  MapData { string name; string displayName; float cellSize;
+            string[] tiles; string[] objects }
+
+Field: tileMapping (TileMappingSO), objectMapping (ObjectMappingSO),
+       mapName "VuongGoc", mapFile "Maps/all_maps",
+       private spawnPosition/targetPosition (có property SpawnPosition/TargetPosition),
+       roadCells, parkingCells (List<Vector3>, toạ độ LOCAL)
+
+Hàm:
+  Awake()               gọi BuildMap().
+  BuildMap()            [ContextMenu] toàn bộ quy trình:
+                        1. kiểm tra 2 SO đã gán chưa
+                        2. Resources.Load<TextAsset>(mapFile) → lỗi nếu không thấy
+                        3. JsonUtility.FromJson<MapCollection>
+                        4. Array.Find theo mapName → lỗi nếu không có map đó
+                        5. DestroyImmediate toàn bộ con cũ (để build lại)
+                        6. roadCells.Clear() / parkingCells.Clear()
+                        7. BuildLookup() của 2 SO → Dictionary<char, GameObject>
+                        8. duyệt r × c:
+                             pos = (c*cellSize, 0, (rows-1-r)*cellSize)
+                             LỚP TILE : tra tileDict → Instantiate, localPosition=pos,
+                                        name = "Tile_{r}_{c}_{char}"
+                                        nếu 'R' → roadCells.Add; 'P' → parkingCells.Add
+                                        nếu 'H' → gắn tag "Obstacle" cho mọi collider con
+                             LỚP OBJECT: tra objDict với ký tự != '-' → Instantiate,
+                                        localPosition = pos + 0.01*up (chống z-fighting),
+                                        name = "Obj_{r}_{c}_{char}"
+                                        'S' → spawnPosition; 'T' → targetPosition
+                        9. Debug.Log tổng kết kích thước map
+Ghi chú: toạ độ ghi ra là LOCAL của transform Map; nơi dùng phải TransformPoint.
+
+--------------------------------------------------------------------------------
+C8. ParkingSlot.cs  (vùng đỗ)
+--------------------------------------------------------------------------------
+[RequireComponent(typeof(BoxCollider))]
+Field: carBefore, carAfter (2 xe hàng xóm), minGap 0.8, maxGap 2.0
+Nội bộ: box
+
+Hàm:
+  Awake()                  cache BoxCollider, đặt isTrigger = true.
+  Box()                    trả về BoxCollider (cache nếu cần).
+  Contains(worldPos)       kiểm tra điểm có nằm trong box trên mặt phẳng X-Z
+                           (bỏ qua trục Y) → dùng để test 4 góc xe.
+  RandomizeNeighbours()    bốc gap ngẫu nhiên, dời carBefore/carAfter theo trục Z local
+                           tới ±(nửa dài + gap). Gọi mỗi đầu episode.
+  OnDrawGizmos()           vẽ wire box trong Scene view.
+
+--------------------------------------------------------------------------------
+C9. DecoySpawner.cs  (xe mồi)
+--------------------------------------------------------------------------------
+Field: decoyPrefabs[], autoPaint true, paintColors[], autoUseParkingTiles true,
+       fillChance 0.5, alwaysFillNearest 2, minTargetClearance 2.0,
+       positionJitter 0.15, yawJitter 4, scaleRange (0.95,1.08), yOffset 0.05,
+       obstacleTag "Obstacle"
+Nội bộ: slotTransforms (List<Transform>), root, pools (List<Stack<GameObject>>),
+        activeGo, activeType, propBlock
+
+Hàm:
+  Start()                          lần lấp đầu tiên (quanh slot hiện tại).
+  RefreshMarkers()                 gom mọi DecoyMarker con; nếu autoUseParkingTiles
+                                   thì thêm mọi object con có tên kết thúc bằng "_P".
+                                   Đảm bảo pools đủ số loại.
+  Respawn(Vector3 targetPos)       thu hồi toàn bộ xe đang bật về pool; sắp xếp ô theo
+                                   khoảng cách tới đích; bỏ ô trong bán kính
+                                   minTargetClearance; quyết định lấp: luôn lấp
+                                   alwaysFillNearest ô gần nhất, còn lại theo fillChance;
+                                   Place() từng xe. Gọi mỗi episode.
+  Get(int type)                    lấy từ pool hoặc Instantiate; gắn tag cho mọi collider;
+                                   SetActive(true).
+  Place(go, marker, type)          đặt vị trí = marker + jitter + yOffset; xoay theo
+                                   marker + yawJitter; scale ngẫu nhiên; sơn màu nếu autoPaint.
+  ApplyPaint(go, color)            MaterialPropertyBlock (_BaseColor cho URP, _Color cho
+                                   Built-in); bỏ qua mesh có tên wheel/tire/glass.
+
+Ghi chú: đây là nơi DUY NHẤT tạo xe mồi. Không liên quan tới .asset mapping.
+
+--------------------------------------------------------------------------------
+C10. DecoyMarker.cs
+--------------------------------------------------------------------------------
+Hàm: OnDrawGizmos() — vẽ wire box 1.9×1.4×4 và một đường hướng mũi xe.
+Không có logic runtime; thuần để nhìn vị trí trong Scene view.
+
+--------------------------------------------------------------------------------
+C11. TileMappingSO.cs / ObjectMappingSO.cs  (ScriptableObject)
+--------------------------------------------------------------------------------
+Class entry:
+  TileEntry   { char symbol; GameObject prefab; bool isObstacle; Vector3 rotationOffset }
+  ObjectEntry { char symbol; GameObject prefab; bool isObstacle; Vector3 rotationOffset }
+
+Hàm: BuildLookup() → Dictionary<char, GameObject>
+     bỏ qua entry có prefab null; trùng ký tự thì entry sau ghi đè.
+
+Ghi chú: isObstacle và rotationOffset HIỆN KHÔNG được đọc ở đâu.
+         Muốn dùng thì sửa JsonMapBuilder để tra cả entry chứ không chỉ prefab.
+
+--------------------------------------------------------------------------------
+C12. CarPrefabBuilder.cs  (Editor tool)
+--------------------------------------------------------------------------------
+Hằng số: WheelX 0.72, WheelZ 1.35, WheelRadius 0.38, SuspDistance 0.2,
+         PrefabPath "Assets/Prefabs/CarAgent.prefab"
+
+Hàm:
+  Build()        [MenuItem("Tools/Build CarAgent Prefab")]
+                 dựng lại hoàn toàn prefab CarAgent:
+                 root: Rigidbody(mass 1200) + BoxCollider(center 0,0.865,0;
+                       size 1.84×1.17×4.36)
+                 + body model (LowPolyCar_Body)
+                 + 2 object cha: WheelColliders, WheelMeshes
+                 + 4 WheelCollider (radius 0.38, mass 20, damping 0.25, suspension
+                   0.2 / spring 35000 / damper 4500 / target 0.5) đặt theo bảng
+                   sideX {-,+,-,+}, sideZ {+,+,-,-}
+                 + 4 mesh bánh
+                 + CarWheels (gán colliders + meshes)
+                 + ManualDrive (gán 4 bánh)
+                 + CarController (gán 4 bánh, updateWheelVisuals=false,
+                   centerOfMass (0,-0.3,0))
+                 lưu prefab, chọn (Selection/Ping) kết quả.
+  FindModel(name) tìm file .obj theo tên trong AssetDatabase.
+
+Ghi chú: prefab build ra KHÔNG có ParkingAgent/BehaviorParameters/DecisionRequester
+         — ba component đó được gắn trực tiếp trên instance trong scene.
+
+
+################################################################################
+PHẦN D — SCHEMA DỮ LIỆU
+################################################################################
+
+D1. File JSON map
+    {
+      "maps": [
+        {
+          "name": "VuongGoc",              // khoá chọn map (mapName)
+          "displayName": "Dạng 1 — ...",   // chỉ để hiển thị
+          "cellSize": 6.0,                 // mét mỗi ô
+          "tiles":   ["RRRR...", ...],     // lưới ký tự lớp nền, mỗi chuỗi 1 hàng
+          "objects": ["----...", ...]      // lưới ký tự lớp vật thể, cùng kích thước
+        }
+      ]
+    }
+    Quy ước toạ độ: cột → X, hàng → Z, và Z đảo: z = (rows-1-r) * cellSize.
+    '-' nghĩa là không có vật thể.
+
+D2. Ký tự
+    Lớp tile   : R đường | H hàng rào | C bê tông | P chỗ đỗ | G cỏ
+                 ('X' xuất hiện trong map 20x20 nhưng KHÔNG có trong mapping)
+    Lớp object : L đèn đường | B bụi cây | S điểm xuất phát | T đích | D marker xe mồi
+    Lưu ý: S và T là DUY NHẤT và TUỲ CHỌN — không có S thì spawnPosition = (0,0,0).
+
+D3. File .asset mapping (định dạng Unity YAML)
+    entries:
+    - symbol: 76              // ASCII của ký tự ('L' = 76, 'P' = 80, ...)
+      prefab: {fileID: ..., guid: ..., type: 3}   // tham chiếu, KHÔNG phải path
+      isObstacle: 0           // chưa dùng
+      rotationOffset: {x:0,y:0,z:0}  // chưa dùng
+
+D4. parking_config.yaml
+    behaviors.CarParking:      tên này PHẢI trùng Behavior Name trong Inspector
+      trainer_type: ppo
+      hyperparameters.{batch_size 1024, buffer_size 10240, learning_rate 3e-4,
+                       beta 5e-3, epsilon 0.2, lambd 0.95, num_epoch 3,
+                       learning_rate_schedule linear}
+      network_settings.{normalize true, hidden_units 256, num_layers 2}
+      reward_signals.extrinsic.{gamma 0.99, strength 1.0}
+      keep_checkpoints 5, max_steps 5e6, time_horizon 128, summary_freq 10000
+
+
+################################################################################
+PHẦN E — HỢP ĐỒNG BẮT BUỘC (đọc trước khi sửa bất cứ thứ gì)
+################################################################################
+
+E1. Vector observation = 11 số, đúng thứ tự sau
+      1-2  vị trí xe trong hệ trục slot (x, z) / obsScale
+      3-4  hướng mũi xe trong hệ trục slot (x, z)
+      5-6  vận tốc trong hệ trục xe (x, z) / maxSpeed
+      7    angularVelocity.y / 2
+      8    steerAngle / maxSteerAngle
+      9-10 tâm slot so với xe (x, z) / obsScale
+      11   góc lệch so với trục slot / 90
+      → BehaviorParameters VectorObservationSize PHẢI = 11.
+        Nếu thêm/bớt 1 lệnh AddObservation phải sửa số này ngay.
+
+E2. Action = 3 số liên tục: [0] ga/lùi -1..1, [1] lái -1..1, [2] phanh 0..1
+      → BehaviorParameters Continuous Actions PHẢI = 3.
+
+E3. Behavior Name = "CarParking" (khớp key trong yaml).
+
+E4. Tag: chỉ dùng "Obstacle" (đã có trong TagManager). Tag "Wall" KHÔNG tồn tại;
+      CompareTag với tag không tồn tại sẽ ném exception.
+
+E5. Toạ độ: mọi thứ lưu trong JsonMapBuilder là LOCAL của transform Map.
+      Nơi dùng phải TransformPoint(). Đừng dời/đổi cha object "Map".
+
+E6. Thứ tự build: JsonMapBuilder.Awake() chạy trước mọi Start.
+      TrainingArea chỉ ĐỌC dữ liệu đã build, không gọi BuildMap().
+
+E7. Một agent = một BehaviorParameters. Agent phải là con của TrainingArea
+      (Initialize lấy area bằng GetComponentInParent).
+
+E8. Chỉ MỘT script được điều khiển bánh xe tại một thời điểm
+      (CarController cho agent, ManualDrive cho người — không bật cả hai).
+
+E9. Số action khai báo phải ≥ chỉ số truy cập: code dùng a[0], a[1], a[2].
+
+E10. maxSpawnDistance phải nhỏ hơn ParkingAgent.maxDistance, nếu không episode
+      fail ngay bước đầu vì "đi quá xa".
+
+================================================================================
+  HẾT
+================================================================================

@@ -7,12 +7,12 @@ ModelImporter:
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
-      name: Asphalt
-    second: {fileID: 2100000, guid: a95c70af7ecfff347abbd6336eea1913, type: 2}
+      name: AsphaltMat
+    second: {fileID: 2100000, guid: 38b9548e0fd7c99439d884ebf011089d, type: 2}
   - first:
       type: UnityEngine:Material
       assembly: UnityEngine.CoreModule
-      name: Line
+      name: LineMat
     second: {fileID: 2100000, guid: 6675ef7a65f7794419fa1e4a8ccb8928, type: 2}
   materials:
     materialImportMode: 2

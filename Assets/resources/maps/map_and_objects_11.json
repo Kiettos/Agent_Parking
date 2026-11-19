@@ -2,33 +2,29 @@
   "maps": [
     {
       "name": "VuongGoc",
-      "displayName": "Dạng 1 — Vuông góc 11x11 (Có cổng)",
+      "displayName": "Dạng 1 — Vuông góc 9x9 (Same design)",
       "cellSize": 6.0,
       "tiles": [
-        "RRRRRRRRRRR",
-        "RGHHHHHHHGR",
-        "RHCPPPCPPHR",
-        "RHCPPPCPPHR",
-        "RHCCCCCCCHR",
-        "RCCCCCCCCCR",
-        "RCCCCCCCCCR",
-        "RHCPPPCPPHR",
-        "RHCPPPCPPHR",
-        "RGHHHHHHHGR",
-        "RRRRRRRRRRR"
+        "RRRRRRRRR",
+        "RGHHHHHGR",
+        "RHCPPCPHR",
+        "RHCCCCCHR",
+        "RCCCCCCCR",
+        "RHCPPCPHR",
+        "RHCPPCPHR",
+        "RGHHHHHGR",
+        "RRRRRRRRR"
       ],
-      "objects": [
-        "-----------",
-        "-B-------B-",
-        "--L-----L--",
-        "-----------",
-        "-----------",
-        "-----------",
-        "-----------",
-        "-----T-----",
-        "--L-----L--",
-        "-----------",
-        "-----------"
+        "objects": [
+        "---------",
+        "-B-----B-",
+        "---DD----",
+        "---------",
+        "---------",
+        "----D-D--",
+        "---DT----",
+        "-B-----B-",
+        "---------"
       ]
     }
   ]

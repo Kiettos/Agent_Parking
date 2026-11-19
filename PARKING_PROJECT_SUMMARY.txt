@@ -1,0 +1,478 @@
+﻿================================================================================
+  DỰ ÁN  : AI AGENT PARKING  (Unity ML-Agents)
+  TỔNG HỢP : toàn bộ câu hỏi – kết luận – những điều đã đính chính – thay đổi code
+  Ngày     : 2026-11-18
+  Đường dẫn: D:\AI_AGENT_PARKING\Agent_parking\My project (1)
+  File này : chỉ để đọc/tra cứu, không ảnh hưởng project Unity
+================================================================================
+
+MỤC LỤC
+  0.  Tóm tắt 10 dòng
+  1.  Tổng quan dự án
+  2.  Luồng dữ liệu chuẩn (đã đính chính)
+  3.  Bảng tra file → vai trò
+  4.  Toàn bộ câu hỏi & trả lời
+  5.  Những hiểu nhầm đã đính chính (DEBUNK)
+  6.  Lỗi phát hiện được (trước khi sửa)
+  7.  Thay đổi đã thực hiện (chi tiết theo file)
+  8.  Việc bạn phải làm tay trong Unity
+  9.  Tham số hiện tại (sau khi sửa)
+  10. Trạng thái & việc tiếp theo
+  11. Những cái bẫy cần nhớ
+
+
+================================================================================
+0. TÓM TẮT 10 DÒNG
+================================================================================
+- Project là môi trường RL dạy xe tự đỗ, dùng Unity 6000.6.8f1 + ML-Agents 4.1.0.
+- Bản gốc KHÔNG train được: thiếu CarController, sai kích thước obs/action,
+  tag "Wall" không tồn tại, map không có điểm 'S'.
+- Đã sửa: thu thập ô đường/chỗ đỗ, spawn + đích ngẫu nhiên giữ K episode,
+  tự gắn CarController, tắt ManualDrive, thống nhất trọng tâm, gắn tag Obstacle.
+- Bạn đã sửa tay: Space Size 15 → 11, Continuous Actions 2 → 3.
+- Hiện tại về mặt code là chạy được; bước tiếp theo là train thật và xem curve.
+
+================================================================================
+1. TỔNG QUAN DỰ ÁN
+================================================================================
+Mục tiêu (theo docs/PRD.md): xe tự tìm đường và đỗ vào bãi mà không cần người.
+- docs/PRD.md, docs/DESIGN.md  (tiếng Việt)
+- configs/parking_config.yaml   (cấu hình PPO cho mlagents-learn)
+
+Công nghệ:
+  Unity            6000.6.8f1
+  URP              17.6.0
+  ML-Agents        4.1.0
+  Input System     1.20.1
+  Git              nhánh main, 15 commit
+
+Behavior name: CarParking  (ppo)
+
+Các con số PRD đưa ra nhưng code chưa làm:
+  - 20 agent chạy cùng map  →  thực tế scene chỉ có 1 agent
+  - tốc độ tối đa 10 m/s    →  CarController.maxSpeed = 6
+  - khối lượng xe 1         →  Rigidbody.mass = 1200
+  - né vật cản bằng Raycast →  chưa có sensor raycast nào
+
+================================================================================
+2. LUỒNG DỮ LIỆU CHUẨN (đã đính chính)
+================================================================================
+
+  MAP.json (chỉ là text)                TileMapping.asset     ObjectMapping.asset
+  { name, displayName, cellSize,        char → prefab ref      char → prefab ref
+    tiles[]: "R H C P G"                (,isObstacle           (,isObstacle
+    objects[]: "L B S T D"               ,rotationOffset)       ,rotationOffset)
+         │                                     │                      │
+         │ Resources.Load<TextAsset>(mapFile)  │ BuildLookup()        │ BuildLookup()
+         ▼                                     ▼                      ▼
+  ┌──────────────────────────────────────────────────────────────────────────┐
+  │ JsonMapBuilder.BuildMap()                                                │
+  │  với từng ô: char → dictionary → Instantiate(prefab)                     │
+  └──────────────────────────────────────────────────────────────────────────┘
+         │                                              │
+         │ xuất ra: GameObjects con của "Map"           │ xuất ra: 2 toạ độ
+         │ (tiles + objects, marker rỗng)               │ spawnPosition  (từ 'S')
+         │                                              │ targetPosition (từ 'T')
+         │                                              │ + roadCells[]   (từ 'R')
+         │                                              │ + parkingCells[](từ 'P')
+         │                                              ▼
+         │                                     TrainingArea.PlaceForEpisode()
+         │                                     - đặt ParkingSlot tại 1 ô 'P'
+         │                                     - đặt spawnPoint tại 1 ô 'R'
+         │                                              │
+         │                                              ├──► DecoySpawner (xe mồi)
+         │                                              │    lấp ô 'D' + "_P"
+         │                                              │    dùng decoy_car.prefab
+         │                                              ▼
+         │                                     ParkingAgent (obs 11 / act 3)
+
+QUAN HỆ FILE ↔ FILE (kiểm chứng bằng GUID):
+  JsonMapBuilder.cs        guid 4470f30f…  (script)
+  TileMapping.asset        guid 20fb968e…  ← trường tileMapping của JsonMapBuilder
+  ObjectMapping.asset      guid e308e2f3…  ← trường objectMapping
+  TileMappingSO.cs         guid 8b37fb28…  ← m_Script bên trong TileMapping.asset
+  ObjectMappingSO.cs       guid d89f7e20…  ← m_Script bên trong ObjectMapping.asset
+  TrainingArea.cs          giữ tham chiếu tới component JsonMapBuilder (trường builder)
+
+  Có đúng 3 thứ trỏ VÀO JsonMapBuilder:
+    1) TileMapping.asset
+    2) ObjectMapping.asset
+    3) TrainingArea.builder  (đọc SpawnPosition / TargetPosition / roadCells /
+                              parkingCells — không gọi BuildMap)
+  Scene "Map" GameObject chỉ là nơi chứa component.
+  File .meta / .csproj KHÔNG phải quan hệ runtime.
+  Lưu ý: scene hiện tại dùng Assets/Prefabs/CarAgent.prefab (guid 7b2accd5…),
+        còn Assets/CarAgent.prefab (guid c68fefeb…) là bản chết, scene không dùng.
+
+================================================================================
+3. BẢNG TRA FILE → VAI TRÒ
+================================================================================
+  Assets/Scripts/ParkingAgent.cs     Agent RL: observation, action, reward, kết thúc
+  Assets/Scripts/CarController.cs    Điều khiển WheelCollider (ga/lái/phanh) cho agent
+  Assets/Scripts/ManualDrive.cs      Lái bằng bàn phím khi test tay (bị tắt khi train)
+  Assets/Scripts/CarWheels.cs        Đồng bộ mesh bánh + đặt trọng tâm
+  Assets/Scripts/WheelVisual.cs      Bản khác của việc đồng bộ 1 bánh (không dùng)
+  Assets/Scripts/TrainingArea.cs     Dàn cảnh mỗi episode: slot, spawn, xe mồi
+  Assets/Scripts/JsonMapBuilder.cs   Đọc JSON → tạo map + ghi toạ độ đặc biệt
+  Assets/Scripts/ParkingSlot.cs      Vùng đỗ (BoxCollider trigger) + xe hàng xóm
+  Assets/Scripts/DecoySpawner.cs     Lấp xe mồi vào ô 'D' và ô "_P"
+  Assets/Scripts/DecoyMarker.cs      Marker rỗng + gizmo (chỉ để nhìn)
+  Assets/Scripts/TileMappingSO.cs    ScriptableObject: char → prefab (lớp tile)
+  Assets/Scripts/ObjectMappingSO.cs  ScriptableObject: char → prefab (lớp object)
+  Assets/Scripts/CarPrefabBuilder.cs Tool menu: dựng lại prefab CarAgent
+  Assets/TileMapping.asset           Bảng R H C P G → prefab
+  Assets/ObjectMapping.asset         Bảng L B S T D → prefab
+  Assets/resources/maps/maps_and_objects.json     4 map 20x20 (đủ S và T)
+  Assets/resources/maps/map_and_objects_11.json   1 map 9x9  (có T, KHÔNG có S)
+  Configs: configs/parking_config.yaml
+
+  Ký tự tile : R=đường  H=hàng rào  C=bê tông  P=chỗ đỗ  G=cỏ
+  Ký tự object: L=đèn    B=bụi cây   S=spawn    T=đích     D=marker xe mồi
+  (ký tự 'X' có trong map 20x20 nhưng KHÔNG có trong bảng mapping → bị bỏ qua)
+
+================================================================================
+4. TOÀN BỘ CÂU HỎI & TRẢ LỜI
+================================================================================
+Q1. Đây là chạy local hay gọi API?
+A : API. Model chạy trên server DeepSeek (provider deepseek-account,
+    model deepseek-flash). Ứng dụng, tool, đọc file thì chạy local.
+
+Q2. Nó đọc được file trong thư mục không?
+A : Có. Đọc được mọi nơi trên máy; chỉ GHI thì bị giới hạn trong workspace.
+
+Q3. Đọc project D:\AI_AGENT_PARKING\... giúp tôi
+A : Đã đọc toàn bộ: 13 script, scene, prefab, 2 file JSON, 2 asset mapping.
+
+Q4. "JsonMapBuilder chỉ nối tới .asset thôi đúng không?"
+A : Đúng. Nó chỉ tham chiếu 2 file .asset. Nhưng .cs không phải "bị nối tới" —
+    .cs là LỚP, .asset là MỘT THỂ HIỆN của lớp đó (m_Script).
+
+Q5. "Nó lấy path và char mapping từ .asset để build hả?"
+A : Char mapping: đúng. "Path": KHÔNG — cả tên file JSON lẫn prefab đều không
+    phải path. Tên file JSON là chuỗi "mapFile" trên component trong scene;
+    prefab là tham chiếu GUID bên trong .asset.
+
+Q6. TrainingArea làm gì?
+A : Là "quản lý dàn cảnh episode": đặt slot tại 'T'/ô P, đặt spawn tại 'S'/ô R,
+    mỗi episode reset xe + nhiễu, đổi khoảng cách xe hàng xóm, gọi DecoySpawner.
+
+Q7. "TrainingArea có kích hoạt JsonMapBuilder không?"
+A : Không. Việc build chạy trong JsonMapBuilder.Awake() do Unity tự gọi.
+    TrainingArea chỉ tìm component (GetComponentInChildren) và ĐỌC kết quả.
+
+Q8. "TrainingArea đọc map mà JsonMapBuilder tạo ra hả?"
+A : Chỉ đọc 2 toạ độ (SpawnPosition, TargetPosition) và giờ thêm 2 danh sách
+    roadCells/parkingCells. DecoySpawner mới là cái quét các object con đã tạo.
+
+Q9. "JsonMapBuilder làm gì có spawnPosition / targetPosition / 2 Vector3?"
+A : Có — chúng là private + [SerializeField] (dòng 34-35), truy cập qua property
+    SpawnPosition / TargetPosition (dòng 37-38). Chỉ được gán khi gặp ký tự 'S'/'T'.
+
+Q10. "Vậy JsonMapBuilder cho ra thông tin vô dụng à?"
+A : Không. 2 toạ độ đó là thứ duy nhất để TrainingArea đặt slot/spawn.
+    Chỉ một toạ độ bị SAI (spawn) vì map thiếu 'S'. Cái thực sự vô dụng là
+    2 field isObstacle và rotationOffset trong .asset (không code nào đọc).
+
+Q11. "map.json không có dấu T hay S, JsonMapBuilder tự tạo ra? ngẫu nhiên hay cố định?"
+A : Dấu nằm ở mảng `objects` (lớp 2), không phải `tiles`. JsonMapBuilder KHÔNG
+    tự tạo, KHÔNG ngẫu nhiên: nó chỉ chép toạ độ của ký tự tìm được.
+    Thống kê:
+      maps_and_objects.json  VuongGoc 20x20  S=(17,10)  T=(15,12)
+      maps_and_objects.json  Cheo      20x20  S=(17,10)  T=(15,12)
+      maps_and_objects.json  SongSong  20x20  S=(17,10)  T=(15,5)
+      maps_and_objects.json  HonHop    20x20  S=(17,10)  T=(7,12)
+      map_and_objects_11.json VuongGoc  9x9   S=KHÔNG CÓ T=(6,4)
+
+Q12. "Vậy là chưa có spawn point?"
+A : Có object SpawnPoint, nhưng toạ độ do map cấp là (0,0,0) → nó nằm ở góc map.
+    Không lỗi, không cảnh báo, vì (0,0,0) là Vector3 hợp lệ.
+
+Q13. "Tôi muốn spawn ngẫu nhiên trên ô đường, và T là mọi chỗ đỗ trống"
+A : Đã làm. Spawn bốc ngẫu nhiên từ mọi ô 'R'; đích bốc từ mọi ô 'P'.
+
+Q14. "T chỉ nên 1 chỗ hay nhiều chỗ?"
+A : Nên đúng 1. T là MỘT mục tiêu đang hoạt động; P là TẬP các chỗ có thể làm
+    mục tiêu. Gắn nhiều T vào JSON sẽ bị ghi đè (field chỉ giữ cái cuối) và
+    sinh ra nhiều MarkerT thừa.
+
+Q15. "Sao không gắn T cho các chỗ đỗ trống khác?"
+A : Vì reward/kết thúc chỉ gắn với MỘT slot. Nhiều T sẽ làm mơ hồ "đỗ ở đâu thì
+    thắng". Danh sách đích = parkingCells (code tự gom từ 'P'), khỏi cần T.
+
+Q16. "Space Size có phải vector trạng thái? sao 11 mà không phải 15?"
+A : Đúng, đó là số phần tử observation. Code gọi AddObservation đúng 11 lần
+    (11 số float) → phải khai 11. Số 15 là giá trị CŨ/SAI còn sót lại.
+
+Q17. "Tôi thấy nhưng không sửa được, sửa CarAgent ở Hierarchy hay Assets?"
+A : Sửa ở HIERARCHY (object trong SampleScene). Component Behavior Parameters
+    là component gắn trên instance trong scene; bản trong Assets/CarAgent.prefab
+    là prefab chết, sửa không ảnh hưởng scene.
+
+================================================================================
+5. NHỮNG HIỂU NHẦM ĐÃ ĐÍNH CHÍNH (DEBUNK)
+================================================================================
+  #  Điều dễ hiểu nhầm                         Sự thật
+  ────────────────────────────────────────────────────────────────────────────
+  1  JsonMapBuilder "nối tới" 2 file .cs       Nối tới 2 file .asset; .cs chỉ là
+                                               lớp (m_Script) của asset.
+  2  "Prefab Path" trong .asset là đường dẫn   Là tham chiếu GUID + fileID,
+                                               không phải chuỗi path.
+  3  MAP.json chứa/trỏ tới MAP, OBJECT,        MAP.json chỉ có text: name,
+     DECOY CAR                                 displayName, cellSize, tiles[],
+                                               objects[]. Không có GUID/path nào.
+  4  Ký tự 'D' là xe mồi                       'D' → DecoyMarker.prefab (marker
+                                               rỗng). Xe mồi thật là
+                                               decoy_car.prefab, được khai báo
+                                               trong mảng của DecoySpawner trên
+                                               object TrainingArea, KHÔNG qua .asset.
+  5  Nhiều dấu T sẽ tạo nhiều mục tiêu         Field targetPosition chỉ giữ giá trị
+                                               cuối cùng (ghi đè âm thầm).
+  6  JsonMapBuilder tự sinh vị trí ngẫu nhiên  Không. Nó chép đúng toạ độ ký tự.
+                                               Ngẫu nhiên đến từ TrainingArea /
+                                               DecoySpawner / ParkingSlot.
+  7  TrainingArea kích hoạt JsonMapBuilder     Không. Build chạy trong Awake().
+  8  Không có spawn point                      Có object spawnPoint, chỉ sai vị trí.
+  9  isObstacle và rotationOffset có tác dụng   Không code nào đọc → dữ liệu chết.
+ 10  Tag "Wall" dùng được                      Tag này KHÔNG tồn tại trong
+                                               TagManager → CompareTag ném lỗi.
+ 11  Space Size = 15 đúng                      Sai. Đúng là 11.
+ 12  "resources" viết thường vô hại            Chạy được trên Windows nhưng sai
+                                               chuẩn Unity, dễ lỗi trên Linux/macOS.
+ 13  Sửa prefab trong Assets là đủ             Behavior Parameters nằm trên instance
+                                               trong scene, sửa prefab không ăn.
+ 14  centerOfMass 0.4 hay -0.3 đều được        Hai script ghi đè nhau, thứ tự Awake
+                                               không xác định → phải thống nhất.
+
+================================================================================
+6. LỖI PHÁT HIỆN ĐƯỢC (trước khi sửa)
+================================================================================
+  [CHẶN] 1. ParkingAgent cần CarController nhưng prefab không có
+            → NullReferenceException tại ParkingAgent.cs (car.SetInputs).
+            Đã tái hiện đúng stack trace trong Unity.
+
+  [CHẶN] 2. Behavior Parameters lệch script
+            VectorObservationSize = 15  (script gửi 11)
+            m_NumContinuousActions = 2  (script ghi 3: ga, lái, phanh)
+
+  [CHẶN] 3. Tag "Wall" không tồn tại trong TagManager
+            → c.collider.CompareTag("Wall") ném UnityException mỗi lần va chạm.
+
+  [NẶNG] 4. Map đang dùng (9x9) không có 'S'
+            → spawnPosition = (0,0,0) → xe xuất phát ở góc map, cách đích 26,8 m.
+
+  [NẶNG] 5. ManualDrive bật trên prefab
+            → ghi đè motorTorque mỗi FixedUpdate, phá lệnh điều khiển của agent.
+
+  [VỪA] 6. isObstacle / rotationOffset chết → tường không được gắn tag.
+
+  [VỪA] 7. centerOfMass bị 2 script ghi đè trái dấu (-0.3 vs +0.4).
+
+  [NHẸ] 8. Ký tự 'X' trong map 20x20 không có trong mapping → bị bỏ qua.
+  [NHẸ] 9. Tồn tại 2 prefab CarAgent, 1 cái chết; có thêm Assets/_Recovery.
+  [NHẸ] 10. Tên thư mục "resources" viết thường.
+  [NHẸ] 11. Scene chỉ có 1 agent (PRD ghi 20).
+
+================================================================================
+7. THAY ĐỔI ĐÃ THỰC HIỆN (CHI TIẾT THEO FILE)
+================================================================================
+
+--------------------------------------------------------------------------------
+7.1  Assets/Scripts/JsonMapBuilder.cs
+--------------------------------------------------------------------------------
+  + Thêm 2 danh sách ứng viên (sau property TargetPosition):
+        [Header("Random spawn/target (Runtime Info)")]
+        public List<Vector3> roadCells    = new List<Vector3>();   // mọi ô 'R'
+        public List<Vector3> parkingCells = new List<Vector3>();   // mọi ô 'P'
+
+  + Trong BuildMap(), xoá danh sách mỗi lần build lại:
+        roadCells.Clear();
+        parkingCells.Clear();
+
+  + Trong vòng lặp tile, sau khi đặt tên tile:
+        if (tileChar == 'R') roadCells.Add(pos);
+        else if (tileChar == 'P') parkingCells.Add(pos);
+
+  + Gắn tag cho tường/hàng rào 'H' (kèm mọi collider con):
+        if (tileChar == 'H')
+            foreach (var col in tile.GetComponentsInChildren<Collider>(true))
+                col.gameObject.tag = "Obstacle";
+
+  Ý nghĩa: map tự sinh ra danh sách đích/điểm xuất phát; tường trở thành vật
+  cản có tag đúng, không cần tạo tag "Wall".
+
+--------------------------------------------------------------------------------
+7.2  Assets/Scripts/TrainingArea.cs
+--------------------------------------------------------------------------------
+  + using System.Collections.Generic;
+
+  + Field mới:
+        [Header("Sinh ngẫu nhiên mỗi episode (thay cho S/T cố định)")]
+        public bool  randomizeEveryEpisode = true;
+        public float minSpawnDistance = 8f;    // m
+        public float maxSpawnDistance = 25f;   // phải < ParkingAgent.maxDistance (40)
+
+        [Header("Giữ đích trong K episode (học xong mới đổi chỗ đỗ)")]
+        public int episodesPerTarget = 50;     // K
+
+  + Trạng thái nội bộ:
+        int episodesAtTarget;
+        Vector3 currentTargetCell;   // toạ độ local trong Map
+        Vector3 currentSpawnCell;
+        readonly List<Vector3> targetBag = new List<Vector3>();
+        int bagIndex;
+
+  + ResetCar(): mỗi episode gọi
+        if (randomizeEveryEpisode && CanRandomize()) PlaceForEpisode();
+        else if (!placed) PlaceFromMap();     // chế độ S/T cố định để debug
+
+  + CanRandomize(): tự tìm builder nếu trống; trả false nếu danh sách rỗng.
+
+  + PickNewTarget():
+        - Fisher-Yates xáo trộn bản copy của parkingCells
+        - lấy lần lượt từng ô (mỗi vòng xáo lại khi hết túi)
+        - chọn luôn currentSpawnCell = PickRoadCell(currentTargetCell)
+        - Debug.Log 1 dòng mỗi lần đổi đích
+
+  + PlaceForEpisode():
+        - guard: thiếu builder/slot/spawnPoint → báo lỗi
+        - guard: parkingCells/roadCells rỗng → quay về PlaceFromMap()
+        - chỉ bốc đích mới khi episodesAtTarget >= episodesPerTarget
+        - đặt slot tại currentTargetCell (+ chỉnh BoxCollider trigger)
+        - đặt spawnPoint tại currentSpawnCell
+
+  + ForceNewTarget(): context menu "Force new target now" để đổi đích ngay.
+
+  + PickRoadCell(localTarget): thử ngẫu nhiên 60 lần trong khoảng
+        [minSpawnDistance, maxSpawnDistance]; không được thì lấy ô có khoảng cách
+        gần khoảng mong muốn nhất.
+
+  Hành vi kết quả:
+        Episode 1..50   : đích A + spawn R#7   (học đỗ ở A)
+        Episode 51..100 : đích B + spawn R#2   (học đỗ ở B)
+        ... hết 9 ô đỗ → xáo túi lại
+        Trong mỗi block vẫn có nhiễu ±3 m và ±30° mỗi episode, xe mồi vẫn đổi.
+
+--------------------------------------------------------------------------------
+7.3  Assets/Scripts/ParkingAgent.cs
+--------------------------------------------------------------------------------
+  + Initialize(): tự gắn CarController nếu thiếu và nối 4 bánh theo tên
+    FL / FR / RL / RR; đặt updateWheelVisuals = false (CarWheels lo hiển thị);
+    tắt ManualDrive nếu có.
+
+  + OnCollisionEnter(): chỉ còn kiểm tra tag "Obstacle"
+    (bỏ "Wall" vì tag này không tồn tại).
+
+--------------------------------------------------------------------------------
+7.4  Assets/Scripts/CarWheels.cs
+--------------------------------------------------------------------------------
+  + centerOfMass: (0, 0.4, 0)  →  (0, -0.3, 0)
+    để thống nhất với CarController, tránh 2 Awake ghi đè nhau.
+
+--------------------------------------------------------------------------------
+7.5  Assets/Scripts/CarPrefabBuilder.cs
+--------------------------------------------------------------------------------
+  + Sau khi tạo ManualDrive, thêm luôn CarController và nối 4 WheelCollider,
+    updateWheelVisuals = false, centerOfMass = (0, -0.3, 0).
+  Nhờ vậy nếu sau này bấm "Tools > Build CarAgent Prefab" thì không mất fix.
+
+--------------------------------------------------------------------------------
+7.6  Thay đổi KHÔNG thực hiện (cố ý)
+--------------------------------------------------------------------------------
+  - Không sửa SampleScene.unity (để bạn đổi trong Inspector cho an toàn).
+  - Không đụng file JSON map (không thêm 'S' vì spawn giờ lấy từ 'R').
+  - Không sửa 2 file .asset (không cần ký tự 'Q' vì map hiện tại ô P nằm ngang).
+
+================================================================================
+8. VIỆC BẠN PHẢI LÀM TAY TRONG UNITY  [BẮT BUỘC]
+================================================================================
+  Chọn object CarAgent TRONG HIERARCHY (thuộc SampleScene), KHÔNG phải prefab
+  trong thư mục Assets. Component: Behavior Parameters.
+
+    Vector Observation  → Space Size          : 15  →  11
+    Actions             → Continuous Actions  : 2   →  3
+
+  Mẹo nếu bị khoá không cho sửa:
+    - Thoát Play mode trước khi sửa.
+    - Đừng mở prefab (Prefab Mode); chọn trực tiếp object trong Hierarchy.
+    - Ô "Model" phải để trống (None). Nếu có .onnx thì tạm bỏ ra rồi mới sửa.
+
+  [ĐÃ XONG theo xác nhận của bạn]
+
+================================================================================
+9. THAM SỐ HIỆN TẠI (SAU KHI SỬA)
+================================================================================
+  ParkingAgent
+    successReward       2         collisionPenalty  -1
+    timePenalty        -0.002     distanceShaping    0.05
+    alignShaping        0.05      obsScale           15
+    maxAngleDeg         10        maxSpeedToPark     0.3
+    holdDecisions       10        maxDistance        40
+    DecisionPeriod      5         MaxStep            0 (không giới hạn)
+
+  CarController
+    maxMotorTorque  800    maxBrakeTorque 3000   idleBrake 100
+    maxSteerAngle    30    maxSpeed          6   centerOfMass (0,-0.3,0)
+
+  TrainingArea
+    slotSize (2.6, 1, 4.8)   slotYaw 0
+    spawnHeight 0.3   spawnRadius 3   spawnYawRange 30
+    randomizeEveryEpisode true
+    minSpawnDistance 8   maxSpawnDistance 25
+    episodesPerTarget 50 (K)
+
+  DecoySpawner
+    fillChance 0.5   alwaysFillNearest 2   minTargetClearance 1.5
+    positionJitter 0.15   yawJitter 4   scale 0.95–1.08
+
+  parking_config.yaml (PPO)
+    batch_size 1024   buffer_size 10240   learning_rate 3e-4
+    beta 5e-3   epsilon 0.2   lambd 0.95   num_epoch 3
+    hidden_units 256 x 2   normalize true   gamma 0.99
+    max_steps 5e6   time_horizon 128   summary_freq 10000
+
+================================================================================
+10. TRẠNG THÁI & VIỆC TIẾP THEO
+================================================================================
+  Đã xong:
+    [x] Hiểu luồng dữ liệu JSON → .asset → JsonMapBuilder → TrainingArea → Agent
+    [x] Spawn ngẫu nhiên trên ô đường, có lọc khoảng cách
+    [x] Đích ngẫu nhiên trên mọi ô đỗ, giữ K=50 episode mỗi đích
+    [x] Hết NullReferenceException (auto CarController)
+    [x] Không còn tag "Wall" gây lỗi
+    [x] Tường 'H' được gắn tag Obstacle
+    [x] obs 11 / action 3 khớp script
+
+  Bước tiếp theo (theo thứ tự nên làm):
+    1. Chạy Play vài chục episode, xác nhận: log "Đích mới ..." xuất hiện 1 lần
+       rồi im lặng ~50 episode; slot không di chuyển trong block đó.
+    2. Chạy train:  mlagents-learn configs/parking_config.yaml --run-id=run1
+       rồi theo dõi tensorboard.
+    3. Nếu agent không hội tụ trong 50 episode/đích: giảm K xuống 20–30,
+       hoặc tăng time_horizon 128 → 256 (đường đi 8–25 m).
+    4. Dọn rác: xoá Assets/CarAgent.prefab (bản chết), Assets/_Recovery/,
+       các prefab trùng (area_0 Variant, decoy_car trùng...).
+    5. Việc nâng cao (làm sau, đừng làm sớm):
+       - Thêm entry 'X' vào ObjectMapping.asset cho map 20x20.
+       - Sửa JsonMapBuilder để dùng isObstacle/rotationOffset trong .asset.
+       - Thêm ký tự 'Q' (ô đỗ dọc 90°) khi làm map có chỗ đỗ xoay.
+       - Thêm Raycast sensor (4–8 tia) nếu muốn agent "né vật cản" như PRD.
+       - Multi-goal: cho agent tự chọn chỗ trống (cần observation occupancy).
+
+================================================================================
+11. NHỮNG CÁI BẪY CẦN NHỚ
+================================================================================
+  1. Toạ độ trong JsonMapBuilder là LOCAL của Map. TrainingArea phải
+     TransformPoint() để ra world. Dời/chuyển cha object "Map" là hỏng ngầm.
+  2. (0,0,0) là toạ độ hợp lệ → thiếu ký tự 'S' sẽ không báo lỗi gì.
+  3. Nhiều 'T' trong JSON: chỉ cái cuối còn, phần trước bị ghi đè âm thầm.
+  4. AddObservation(Vector3) cộng 3, AddObservation(float) cộng 1.
+     Space Size phải bằng TỔNG số đó (chưa tính NumStacked).
+  5. .cs không "chạy" trong asset: .asset giữ m_Script trỏ tới class. Xoá .cs
+     là mất toàn bộ dữ liệu của .asset.
+  6. Sửa prefab trong Assets ≠ sửa instance trong scene khi component được
+     thêm trực tiếp lên instance (đúng trường hợp Behavior Parameters này).
+  7. CompareTag với tag không tồn tại thì NÉM exception, không trả false.
+  8. Two Awake cùng ghi centerOfMass → kết quả phụ thuộc thứ tự, không xác định.
+================================================================================
+  HẾT
+================================================================================

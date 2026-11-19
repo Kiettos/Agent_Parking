@@ -40,3 +40,7 @@ venv/
 # --- Temporary Files ---
 *.tmp
 *.log
+results/
+Recordings/
+Assets/_Recovery/
+.venv/

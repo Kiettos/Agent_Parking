@@ -9,7 +9,7 @@ public class CarWheels : MonoBehaviour
     public Transform[] meshes = new Transform[4];
 
     [Tooltip("Lower centre of mass = car flips less. Local space of CarAgent.")]
-    public Vector3 centerOfMass = new Vector3(0f, 0.4f, 0f);
+    public Vector3 centerOfMass = new Vector3(0f, -0.3f, 0f);
 
     void Awake()
     {

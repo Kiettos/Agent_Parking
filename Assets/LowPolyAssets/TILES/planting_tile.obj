@@ -1,4 +1,5 @@
 # WaveFront OBJ file - Raised Planting Area Tile
+# FIXED: reversed winding of faces 6-14 (top rim, inner walls, soil top) so normals face outward/up
 mtllib Tile_Planting.mtl
 o Tile_Planting
 
@@ -39,19 +40,19 @@ f 3 7 8 4
 f 4 8 5 1
 
 # 3. Mặt trên thành bồn (viền bê tông từ -3 đến -2 / 2 đến 3)
-f 5 6 10 9
-f 6 7 11 10
-f 7 8 12 11
-f 8 5 9 12
+f 9 10 6 5
+f 10 11 7 6
+f 11 12 8 7
+f 12 9 5 8
 
 # 4. Bốn mặt tường trong lòng bồn (từ đỉnh 0.02 xuống đất -0.06)
-f 9 10 14 13
-f 10 11 15 14
-f 11 12 16 15
-f 12 9 13 16
+f 13 14 10 9
+f 14 15 11 10
+f 15 16 12 11
+f 16 13 9 12
 
 
 g SoilMaterial
 usemtl SoilMaterial
 # 5. Lớp đất phẳng ở đáy lòng bồn (Y = -0.06)
-f 13 14 15 16
+f 16 15 14 13

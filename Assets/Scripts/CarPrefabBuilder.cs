@@ -92,6 +92,15 @@ public static class CarPrefabBuilder
         md.rl = cols[2];
         md.rr = cols[3];
 
+        // Thêm CarController luôn để prefab build ra là đủ dùng cho ParkingAgent
+        CarController cc = root.AddComponent<CarController>();
+        cc.frontLeft = cols[0];
+        cc.frontRight = cols[1];
+        cc.rearLeft = cols[2];
+        cc.rearRight = cols[3];
+        cc.updateWheelVisuals = false;   // CarWheels đã đồng bộ mesh bánh xe
+        cc.centerOfMass = new Vector3(0f, -0.3f, 0f);
+
         // Save as prefab
         if (!AssetDatabase.IsValidFolder(PrefabFolder))
             AssetDatabase.CreateFolder("Assets", "Prefabs");

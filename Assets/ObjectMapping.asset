@@ -22,10 +22,14 @@ MonoBehaviour:
     isObstacle: 0
     rotationOffset: {x: 0, y: 0, z: 0}
   - symbol: 83
-    prefab: {fileID: 7673064698298229324, guid: 5e73ebca01a829f479f780fff6537e92, type: 3}
+    prefab: {fileID: 1441527836182977981, guid: b349cb01be9936648b38f95c92711d19, type: 3}
     isObstacle: 0
     rotationOffset: {x: 0, y: 0, z: 0}
   - symbol: 84
-    prefab: {fileID: 5549289154159432276, guid: e95c1a4355573e24985fdde1f6b5ce1e, type: 3}
+    prefab: {fileID: 7627426370896274067, guid: 0c5451e7c3e75cc4dac4ceda58fa49ae, type: 3}
+    isObstacle: 0
+    rotationOffset: {x: 0, y: 0, z: 0}
+  - symbol: 68
+    prefab: {fileID: 4956757289744771578, guid: 5af3e67913bf0364a9f90a4796669832, type: 3}
     isObstacle: 0
     rotationOffset: {x: 0, y: 0, z: 0}

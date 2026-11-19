@@ -37,6 +37,33 @@ public class JsonMapBuilder : MonoBehaviour
     public Vector3 SpawnPosition => spawnPosition;
     public Vector3 TargetPosition => targetPosition;
 
+    // --- ỨNG VIÊN CHO SINH NGẪU NHIÊN ---
+    // Toạ độ (local của Map) của mọi ô đường 'R' và mọi ô đỗ 'P'.
+    // TrainingArea dùng 2 danh sách này để bốc ngẫu nhiên mỗi episode.
+    [Header("Random spawn/target (Runtime Info)")]
+    public List<Vector3> roadCells = new List<Vector3>();
+    public List<Vector3> parkingCells = new List<Vector3>();
+
+    [Header("Kích thước map (Runtime Info)")]
+    public int mapRows;
+    public int mapCols;
+    public float mapCellSize;
+
+    // Vùng hợp lệ của map trong không gian LOCAL. Dùng để kiểm tra xe ra ngoài biên.
+    public Bounds GetLocalBounds()
+    {
+        float c = mapCellSize <= 0f ? 6f : mapCellSize;
+        int r = mapRows <= 0 ? 9 : mapRows;
+        int cc = mapCols <= 0 ? 9 : mapCols;
+
+        Vector3 min = new Vector3(-c * 0.5f, -1f, -c * 0.5f);
+        Vector3 max = new Vector3((cc - 0.5f) * c, 10f, (r - 0.5f) * c);
+
+        var b = new Bounds();
+        b.SetMinMax(min, max);
+        return b;
+    }
+
     void Awake()
     {
         BuildMap();
@@ -72,6 +99,10 @@ public class JsonMapBuilder : MonoBehaviour
         for (int i = transform.childCount - 1; i >= 0; i--)
             DestroyImmediate(transform.GetChild(i).gameObject);
 
+        // Xoá danh sách ứng viên cũ trước khi build lại
+        roadCells.Clear();
+        parkingCells.Clear();
+
         // 3. Lấy bảng Mapping (Dictionary)
         Dictionary<char, GameObject> tileDict = tileMapping.BuildLookup();
         Dictionary<char, GameObject> objDict = objectMapping.BuildLookup();
@@ -96,6 +127,15 @@ public class JsonMapBuilder : MonoBehaviour
                     GameObject tile = Instantiate(tilePrefab, transform);
                     tile.transform.localPosition = pos;
                     tile.name = $"Tile_{r}_{c}_{tileChar}";
+
+                    // Ghi lại ô đường / ô đỗ để TrainingArea bốc ngẫu nhiên
+                    if (tileChar == 'R') roadCells.Add(pos);
+                    else if (tileChar == 'P') parkingCells.Add(pos);
+
+                    // Tường / hàng rào 'H' → tag Obstacle để va chạm bị tính là fail
+                    if (tileChar == 'H')
+                        foreach (var col in tile.GetComponentsInChildren<Collider>(true))
+                            col.gameObject.tag = "Obstacle";
 
                     // --- ĐOẠN CODE TÍNH SCALE FACTOR CHUẨN ---
                     if (r == 0 && c == 0) 
@@ -134,6 +174,60 @@ public class JsonMapBuilder : MonoBehaviour
             }
         }
 
+        // Lưu kích thước map để agent kiểm tra biên
+        mapRows = rows;
+        mapCols = map.tiles[0].Length;
+        mapCellSize = map.cellSize;
+
+        // Tường vô hình bao quanh map
+        BuildBoundaryWalls();
+
         Debug.Log($"[JsonMapBuilder] ✅ Đã build xong map: {mapName} ({rows}x{map.tiles[0].Length})");
+    }
+
+    // 4 bức tường vô hình quanh rìa map: xe không thể chạy ra ngoài
+    void BuildBoundaryWalls()
+    {
+        var old = transform.Find("Walls");
+        if (old != null) DestroyImmediate(old.gameObject);
+
+        if (mapCols <= 0 || mapRows <= 0) return;
+
+        Transform root = new GameObject("Walls").transform;
+        root.SetParent(transform, false);
+
+        Bounds b = GetLocalBounds();
+        const float t = 2f;    // độ dày tường
+        const float h = 4f;    // chiều cao
+
+        AddWall(root, "Wall_X_Min",
+            new Vector3(b.min.x - t * 0.5f, h * 0.5f, b.center.z),
+            new Vector3(t, h, b.size.z + t * 2f));
+
+        AddWall(root, "Wall_X_Max",
+            new Vector3(b.max.x + t * 0.5f, h * 0.5f, b.center.z),
+            new Vector3(t, h, b.size.z + t * 2f));
+
+        AddWall(root, "Wall_Z_Min",
+            new Vector3(b.center.x, h * 0.5f, b.min.z - t * 0.5f),
+            new Vector3(b.size.x + t * 2f, h, t));
+
+        AddWall(root, "Wall_Z_Max",
+            new Vector3(b.center.x, h * 0.5f, b.max.z + t * 0.5f),
+            new Vector3(b.size.x + t * 2f, h, t));
+    }
+
+    static void AddWall(Transform parent, string wallName, Vector3 localCenter, Vector3 size)
+    {
+        var go = new GameObject(wallName);
+        go.transform.SetParent(parent, false);
+        go.transform.localPosition = localCenter;
+
+        var box = go.AddComponent<BoxCollider>();
+        box.size = size;
+
+        // KHÔNG gắn tag "Obstacle": tường chỉ chặn vật lý, không làm fail episode.
+        // Muốn chạm rìa là fail thì bỏ comment dòng dưới:
+        // go.tag = "Obstacle";
     }
 }
