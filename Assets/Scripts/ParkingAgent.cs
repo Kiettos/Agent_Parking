@@ -23,6 +23,10 @@ public class ParkingAgent : Agent
     [Header("Khác")]
     public float obsScale = 15f;            // chia observation vị trí cho số này (mét)
     public float maxDistance = 40f;         // đi xa hơn thì kết thúc episode
+    [Header("Object Observation: 8 tia")]
+    public float rayLength = 15f;
+    public float rayHeight = 0.5f;          // thấp hơn 1m để thấy cả ô đỗ (trigger cao 1m)
+    public bool debugRays = true;
     public bool debugLog = false;
 
     CarController car;
@@ -80,7 +84,7 @@ public class ParkingAgent : Agent
         Measure(out prevDist, out prevAlign);
     }
 
-    // ---------- OBSERVATION: tổng cộng 11 số (đặt Space Size = 11) ----------
+    // ---------- OBSERVATION: 11 số xe + 32 số từ 8 tia (đặt Space Size = 43) ----------
     public override void CollectObservations(VectorSensor sensor)
     {
         // Vị trí xe trong hệ tọa độ của slot (không phụ thuộc khu train nằm ở đâu): 2 số
@@ -111,6 +115,34 @@ public class ParkingAgent : Agent
 
         // Xe lệch bao nhiêu độ so với trục dài của slot (-1..1): 1 số
         sensor.AddObservation(AngleToAxis() / 90f);
+
+        // 8 tia quanh xe: mỗi tia có 2 cờ đối tượng + 1 cờ miss + 1 khoảng cách = 4 số.
+        // Góc: 0, 45, 90, 135, 180, 225, 270, 315 độ so với mũi xe.
+        for (int i = 0; i < 8; i++)
+        {
+            float angle = i * 45f;
+            Vector3 dir = Quaternion.Euler(0f, angle, 0f) * transform.forward;
+            Vector3 origin = transform.position + Vector3.up * rayHeight;
+
+            if (CastRay(origin, dir, out RaycastHit hit))
+            {
+                bool isObstacle = hit.collider.CompareTag("Obstacle") ||
+                                  hit.collider.name.StartsWith("Wall");
+                bool isSlot = hit.collider == slotBox;
+
+                sensor.AddObservation(isObstacle ? 1f : 0f);
+                sensor.AddObservation(isSlot ? 1f : 0f);
+                sensor.AddObservation(0f); // không miss
+                sensor.AddObservation(hit.distance / rayLength);
+            }
+            else
+            {
+                sensor.AddObservation(0f);
+                sensor.AddObservation(0f);
+                sensor.AddObservation(1f);
+                sensor.AddObservation(1f);
+            }
+        }
     }
 
     // ---------- ACTION + REWARD ----------
@@ -238,6 +270,28 @@ public class ParkingAgent : Agent
         return true;
     }
 
+    static readonly RaycastHit[] rayBuffer = new RaycastHit[16];
+
+    // Lấy vật gần nhất của tia, bỏ qua collider của chính xe
+    bool CastRay(Vector3 origin, Vector3 dir, out RaycastHit best)
+    {
+        best = default;
+        bool found = false;
+        float min = float.MaxValue;
+        int n = Physics.RaycastNonAlloc(origin, dir, rayBuffer, rayLength, ~0, QueryTriggerInteraction.Collide);
+        for (int i = 0; i < n; i++)
+        {
+            if (rayBuffer[i].collider.transform.IsChildOf(transform)) continue;
+            if (rayBuffer[i].distance < min)
+            {
+                min = rayBuffer[i].distance;
+                best = rayBuffer[i];
+                found = true;
+            }
+        }
+        return found;
+    }
+
     Vector3 Vel()
     {
 #if UNITY_6000_0_OR_NEWER
@@ -245,5 +299,27 @@ public class ParkingAgent : Agent
 #else
         return rb.velocity;
 #endif
+    }
+
+    void OnDrawGizmosSelected()
+    {
+        if (!debugRays) return;
+
+        Vector3 origin = transform.position + Vector3.up * rayHeight;
+        for (int i = 0; i < 8; i++)
+        {
+            Vector3 dir = Quaternion.Euler(0f, i * 45f, 0f) * transform.forward;
+            if (CastRay(origin, dir, out RaycastHit hit))
+            {
+                bool obstacle = hit.collider.CompareTag("Obstacle") || hit.collider.name.StartsWith("Wall");
+                Gizmos.color = obstacle ? Color.red : Color.yellow;
+                Gizmos.DrawLine(origin, hit.point);
+            }
+            else
+            {
+                Gizmos.color = Color.green;
+                Gizmos.DrawLine(origin, origin + dir * rayLength);
+            }
+        }
     }
 }
