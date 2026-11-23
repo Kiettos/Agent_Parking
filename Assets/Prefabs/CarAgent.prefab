@@ -84,6 +84,7 @@ GameObject:
   - component: {fileID: 4146165961042146103}
   - component: {fileID: 5034542898237834405}
   - component: {fileID: 1662942388517854868}
+  - component: {fileID: 4081073530906678566}
   m_Layer: 0
   m_Name: CarAgent
   m_TagString: Untagged
@@ -200,6 +201,19 @@ MonoBehaviour:
   brakeTorque: 2500
   idleBrake: 150
   maxSteerAngle: 30
+--- !u!114 &4081073530906678566
+MonoBehaviour:
+  m_ObjectHideFlags: 0
+  m_CorrespondingSourceObject: {fileID: 0}
+  m_PrefabInstance: {fileID: 0}
+  m_PrefabAsset: {fileID: 0}
+  m_GameObject: {fileID: 4352662298616722943}
+  m_Enabled: 1
+  m_EditorHideFlags: 0
+  m_Script: {fileID: 11500000, guid: 06b16f66e38ffe94990f8dd66db94a86, type: 3}
+  m_Name: 
+  m_EditorClassIdentifier: Assembly-CSharp::PPOOnnxAgent
+  modelAsset: {fileID: 5022602860645237092, guid: e8e19ad78d8108e43ba003eb2fffd326, type: 3}
 --- !u!1 &5241086335267566258
 GameObject:
   m_ObjectHideFlags: 0

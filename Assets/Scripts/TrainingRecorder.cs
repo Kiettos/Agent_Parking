@@ -1,9 +1,6 @@
 #if UNITY_EDITOR
-// Quay video từng episode khi train (chỉ chạy trong Editor).
-// Cần package com.unity.recorder (đã cài 5.1.8).
-// Gắn component này vào object TrainingArea.
+using System;
 using System.IO;
-using Unity.MLAgents;
 using UnityEditor.Recorder;
 using UnityEditor.Recorder.Encoder;
 using UnityEditor.Recorder.Input;
@@ -12,124 +9,174 @@ using UnityEngine;
 [DisallowMultipleComponent]
 public class TrainingRecorder : MonoBehaviour
 {
-    [Header("Lịch quay")]
-    [Tooltip("Trong khoảng episode đầu tiên này thì quay dày hơn")]
-    public int denseUntilEpisode = 50;
-    [Tooltip("Quay mỗi N episode trong giai đoạn đầu")]
-    public int denseEvery = 5;
-    [Tooltip("Sau giai đoạn đầu thì quay mỗi N episode")]
-    public int sparseEvery = 20;
+    [Header("Automatic ONNX capture")]
+    [Min(1)] public int firstAttemptsToRecord = 10;
+    [Min(1)] public int successfulParksToRecord = 10;
+    [Min(1)] public int maxAttemptsForSuccessClip = 100;
 
-    [Header("Chất lượng (thấp = file nhỏ)")]
-    public int outputWidth = 480;
-    public int outputHeight = 270;
-    public float frameRate = 10f;
-
-    [Header("Tốc độ khi quay")]
-    [Tooltip("mlagents-learn chạy timeScale 20; để 1 khi quay nếu muốn video xem được")]
-    public float recordTimeScale = 1f;
-
-    [Header("Nơi lưu")]
+    [Header("Video")]
+    [Min(320)] public int outputWidth = 1280;
+    [Min(180)] public int outputHeight = 720;
+    [Min(1f)] public float frameRate = 30f;
+    [Min(0.1f)] public float recordTimeScale = 1f;
     public string folder = "Recordings";
 
-    Camera followCamera;
-    RecorderController controller;
-    MovieRecorderSettings movie;
-    int lastEpisode = -1;
-    bool recording;
-    float savedTimeScale = 1f;
-
-    void Start()
+    private enum CapturePhase
     {
-        Build();
-        lastEpisode = Academy.Instance.EpisodeCount;
-        Debug.Log($"[TrainingRecorder] Sẵn sàng. denseUntil={denseUntilEpisode}, " +
-                  $"denseEvery={denseEvery}, sparseEvery={sparseEvery}, " +
-                  $"size={outputWidth}x{outputHeight}@{frameRate}fps");
+        Idle,
+        FirstAttempts,
+        SuccessfulParks,
+        Complete
     }
 
-    void Build()
+    private CapturePhase phase;
+    private RecorderController controller;
+    private RecorderControllerSettings controllerSettings;
+    private MovieRecorderSettings movie;
+    private bool recording;
+    private float savedTimeScale = 1f;
+    private int firstAttemptCount;
+    private int successPhaseAttemptCount;
+    private int successCount;
+    private string runTimestamp;
+
+    public bool BeginAutomaticCapture()
     {
-        var settings = ScriptableObject.CreateInstance<RecorderControllerSettings>();
-        settings.SetRecordModeToManual();
-        settings.FrameRate = frameRate;
-        settings.CapFrameRate = true;
+        if (phase == CapturePhase.FirstAttempts || phase == CapturePhase.SuccessfulParks)
+            return false;
 
-        controller = new RecorderController(settings);
+        firstAttemptCount = 0;
+        successPhaseAttemptCount = 0;
+        successCount = 0;
+        runTimestamp = DateTime.Now.ToString("yyyyMMdd_HHmmss");
+        phase = CapturePhase.FirstAttempts;
 
+        bool started = StartClip("first_10_attempts");
+        if (!started)
+            phase = CapturePhase.Complete;
+        return started;
+    }
+
+    public bool RecordAttemptResult(bool succeeded)
+    {
+        if (phase == CapturePhase.FirstAttempts)
+        {
+            firstAttemptCount++;
+            Debug.Log($"[TrainingRecorder] Lượt đầu: {firstAttemptCount}/{firstAttemptsToRecord}");
+
+            if (firstAttemptCount >= firstAttemptsToRecord)
+            {
+                StopClip();
+                phase = CapturePhase.SuccessfulParks;
+                if (!StartClip("successes_until_10"))
+                    phase = CapturePhase.Complete;
+            }
+
+            return phase == CapturePhase.Complete;
+        }
+
+        if (phase != CapturePhase.SuccessfulParks)
+            return phase == CapturePhase.Complete;
+
+        successPhaseAttemptCount++;
+        if (succeeded)
+            successCount++;
+
+        Debug.Log($"[TrainingRecorder] Lượt {successPhaseAttemptCount}/{maxAttemptsForSuccessClip}; " +
+                  $"đỗ thành công {successCount}/{successfulParksToRecord}");
+        if (successCount >= successfulParksToRecord)
+        {
+            StopClip();
+            phase = CapturePhase.Complete;
+            Debug.Log("[TrainingRecorder] Đã ghi xong 10 lần đỗ thành công.");
+            return true;
+        }
+
+        if (successPhaseAttemptCount < maxAttemptsForSuccessClip)
+            return false;
+
+        StopClip();
+        phase = CapturePhase.Complete;
+        Debug.LogWarning("[TrainingRecorder] Đã chạm giới hạn lượt thử; video thứ hai được lưu dù chưa đủ số lần đỗ.");
+        return true;
+    }
+
+    public void CancelAutomaticCapture()
+    {
+        StopClip();
+        phase = CapturePhase.Complete;
+    }
+
+    private bool StartClip(string clipName)
+    {
+        controllerSettings = ScriptableObject.CreateInstance<RecorderControllerSettings>();
+        controllerSettings.SetRecordModeToManual();
+        controllerSettings.FrameRate = frameRate;
+        controllerSettings.CapFrameRate = true;
+
+        controller = new RecorderController(controllerSettings);
         movie = ScriptableObject.CreateInstance<MovieRecorderSettings>();
-        movie.name = "TrainingClip";
+        movie.name = clipName;
         movie.Enabled = true;
-        movie.OutputFile = folder + "/ep_<Take>";
-        movie.FrameRate = frameRate;
 
+        string outputFolder = string.IsNullOrWhiteSpace(folder) ? "Recordings" : folder.Trim();
+        Directory.CreateDirectory(outputFolder);
+        outputFolder = outputFolder.Replace("\\", "/").TrimEnd('/');
+        movie.OutputFile = outputFolder + "/onnx_" + clipName + "_" + runTimestamp;
+        movie.FrameRate = frameRate;
         movie.ImageInputSettings = new GameViewInputSettings
         {
             OutputWidth = outputWidth,
             OutputHeight = outputHeight
         };
-
         movie.EncoderSettings = new CoreEncoderSettings
         {
             Codec = CoreEncoderSettings.OutputCodec.MP4,
             EncodingQuality = CoreEncoderSettings.VideoEncodingQuality.Low
         };
 
-        settings.AddRecorderSettings(movie);
+        controllerSettings.AddRecorderSettings(movie);
         controller.PrepareRecording();
-
-        followCamera = Camera.main;
-    }
-
-    void Update()
-    {
-        int episode = Academy.Instance.EpisodeCount;
-        if (episode == lastEpisode) return;
-        lastEpisode = episode;
-
-        if (recording) StopClip();
-        if (ShouldRecord(episode)) StartClip(episode);
-    }
-
-    bool ShouldRecord(int episode)
-    {
-        if (denseEvery <= 0 || sparseEvery <= 0) return false;
-        if (episode <= denseUntilEpisode) return episode % denseEvery == 0;
-        return episode % sparseEvery == 0;
-    }
-
-    void StartClip(int episode)
-    {
-        if (controller == null) return;
-
-        // Bật camera để recorder có hình
-        if (followCamera != null) followCamera.enabled = true;
 
         savedTimeScale = Time.timeScale;
         Time.timeScale = recordTimeScale;
-
-        if (controller.StartRecording())
+        if (!controller.StartRecording())
         {
-            recording = true;
-            Debug.Log($"[TrainingRecorder] ● REC episode {episode} (timeScale={recordTimeScale})");
+            Time.timeScale = savedTimeScale;
+            Debug.LogError("[TrainingRecorder] Không thể bắt đầu ghi " + clipName);
+            return false;
         }
+
+        recording = true;
+        Debug.Log("[TrainingRecorder] Đang ghi: " + movie.OutputFile + ".mp4");
+        return true;
     }
 
-    void StopClip()
+    private void StopClip()
     {
-        if (!recording) return;
-        recording = false;
+        if (!recording)
+            return;
 
+        recording = false;
         controller.StopRecording();
         Time.timeScale = savedTimeScale;
+        Debug.Log("[TrainingRecorder] Đã dừng ghi video.");
 
-        Debug.Log("[TrainingRecorder] ■ STOP");
+        if (movie != null)
+            Destroy(movie);
+        if (controllerSettings != null)
+            Destroy(controllerSettings);
+
+        movie = null;
+        controllerSettings = null;
+        controller = null;
     }
 
-    void OnDisable()
+    private void OnDisable()
     {
-        if (recording) StopClip();
-        if (followCamera != null) followCamera.enabled = false;
+        StopClip();
+        if (phase != CapturePhase.Complete)
+            phase = CapturePhase.Idle;
     }
 }
 #endif
