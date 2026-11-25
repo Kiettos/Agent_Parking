@@ -4,28 +4,40 @@ using Unity.MLAgents.Sensors;
 using UnityEngine;
 using UnityEngine.InputSystem;
 
-// Gắn vào object Car (cùng chỗ với Rigidbody, CarController, Behavior Parameters, Decision Requester).
-// Cần: TrainingArea ở object cha, ParkingSlot có Box Collider, tag "Wall" và "Obstacle" đã tạo.
 public class ParkingAgent : Agent
 {
-    [Header("Reward")]
-    public float successReward = 2f;
-    public float collisionPenalty = -1f;
-    public float timePenalty = -0.002f;     // phạt nhỏ mỗi quyết định, để xe không đứng ì
-    public float distanceShaping = 0.05f;   // thưởng cho mỗi mét lại gần slot
-    public float alignShaping = 0.05f;      // thưởng khi xe xoay thẳng hàng với slot
+    [Header("Reward - Thành công & Dẫn đường")]
+    public float successReward = 20f;
+    public float distanceShaping = 0.05f;
+    public float alignShaping = 0.05f;
+
+    [Header("Penalty - Va chạm chi tiết ")]
+    public float decoyPenalty = -1.5f;         // Xe decoy
+    public float lampPenalty = -1.5f;          // Cột đèn (L)
+    public float boundaryPenalty = -1.2f;      // Ra khỏi biên map
+    public float bushPenalty = -1.0f;          // Bụi cây (B)
+    public float plantingPenalty = -1.0f;      // Bồn cây / thảm cỏ (G)
+    public float sidewalkPenalty = -0.8f;      // Vỉa hè (H)
+    public float obstaclePenalty = -1.0f;      // Tường & vật cản mặc định
+
+    [Header("Penalty - Chi phí di chuyển theo mặt sàn (mỗi Decision)")]
+    public float roadStepPenalty = -0.001f;    // Đường chính (R)
+    public float courtStepPenalty = -0.002f;   // Sân bãi (C)
+    public float wrongSlotPenalty = -0.015f;   // Đè lên ô đỗ P khác không phải đích
+    public float wrongSlotDistThreshold = 4.5f;// Khoảng cách (m) coi như đang ở ô P khác
 
     [Header("Điều kiện đỗ thành công")]
-    public float maxAngleDeg = 10f;         // lệch tối đa so với trục dài của slot
-    public float maxSpeedToPark = 0.3f;     // m/s, phải gần như đứng yên
-    public int holdDecisions = 10;          // phải giữ đúng trạng thái này ~10 quyết định liên tiếp
+    public float maxAngleDeg = 10f;
+    public float maxSpeedToPark = 0.3f;
+    public int holdDecisions = 10;
 
     [Header("Khác")]
-    public float obsScale = 15f;            // chia observation vị trí cho số này (mét)
-    public float maxDistance = 40f;         // đi xa hơn thì kết thúc episode
+    public float obsScale = 15f;
+    public float maxDistance = 40f;
+
     [Header("Object Observation: 8 tia")]
     public float rayLength = 15f;
-    public float rayHeight = 0.5f;          // thấp hơn 1m để thấy cả ô đỗ (trigger cao 1m)
+    public float rayHeight = 0.5f;
     public bool debugRays = true;
     public bool debugLog = false;
 
@@ -46,7 +58,6 @@ public class ParkingAgent : Agent
         car = GetComponent<CarController>();
         if (car == null)
         {
-            // Tự gắn CarController nếu prefab chưa có (chống NullReferenceException)
             car = gameObject.AddComponent<CarController>();
             WheelCollider[] cols = GetComponentsInChildren<WheelCollider>(true);
             foreach (var wc in cols)
@@ -59,10 +70,9 @@ public class ParkingAgent : Agent
                     case "RR": car.rearRight = wc; break;
                 }
             }
-            car.updateWheelVisuals = false;   // CarWheels đã lo việc đồng bộ mesh bánh
+            car.updateWheelVisuals = false;
         }
 
-        // ManualDrive ghi đè motorTorque mỗi FixedUpdate → tắt khi agent điều khiển
         var manual = GetComponent<ManualDrive>();
         if (manual != null) manual.enabled = false;
 
@@ -84,40 +94,30 @@ public class ParkingAgent : Agent
         Measure(out prevDist, out prevAlign);
     }
 
-    // ---------- OBSERVATION: 11 số xe + 32 số từ 8 tia (đặt Space Size = 43) ----------
+    // ---------- OBSERVATION: 11 số xe + 32 số từ 8 tia (Space Size = 43) ----------
     public override void CollectObservations(VectorSensor sensor)
     {
-        // Vị trí xe trong hệ tọa độ của slot (không phụ thuộc khu train nằm ở đâu): 2 số
         Vector3 local = slot.transform.InverseTransformPoint(transform.position);
         sensor.AddObservation(local.x / obsScale);
         sensor.AddObservation(local.z / obsScale);
 
-        // Hướng mũi xe trong hệ tọa độ của slot: 2 số
         Vector3 fwd = slot.transform.InverseTransformDirection(transform.forward);
         sensor.AddObservation(fwd.x);
         sensor.AddObservation(fwd.z);
 
-        // Vận tốc theo hệ tọa độ của xe (tiến/lùi và trượt ngang): 2 số
         Vector3 v = transform.InverseTransformDirection(Vel());
         sensor.AddObservation(v.x / car.maxSpeed);
         sensor.AddObservation(v.z / car.maxSpeed);
 
-        // Tốc độ xoay thân xe: 1 số
         sensor.AddObservation(rb.angularVelocity.y / 2f);
-
-        // Góc lái hiện tại: 1 số
         sensor.AddObservation(car.frontLeft.steerAngle / car.maxSteerAngle);
 
-        // Tâm slot nằm ở đâu so với xe (trái/phải, trước/sau): 2 số
         Vector3 toSlot = transform.InverseTransformPoint(SlotCenter());
         sensor.AddObservation(toSlot.x / obsScale);
         sensor.AddObservation(toSlot.z / obsScale);
 
-        // Xe lệch bao nhiêu độ so với trục dài của slot (-1..1): 1 số
         sensor.AddObservation(AngleToAxis() / 90f);
 
-        // 8 tia quanh xe: mỗi tia có 2 cờ đối tượng + 1 cờ miss + 1 khoảng cách = 4 số.
-        // Góc: 0, 45, 90, 135, 180, 225, 270, 315 độ so với mũi xe.
         for (int i = 0; i < 8; i++)
         {
             float angle = i * 45f;
@@ -126,13 +126,12 @@ public class ParkingAgent : Agent
 
             if (CastRay(origin, dir, out RaycastHit hit))
             {
-                bool isObstacle = hit.collider.CompareTag("Obstacle") ||
-                                  hit.collider.name.StartsWith("Wall");
+                bool isObstacle = IsObstacleCollider(hit.collider);
                 bool isSlot = hit.collider == slotBox;
 
                 sensor.AddObservation(isObstacle ? 1f : 0f);
                 sensor.AddObservation(isSlot ? 1f : 0f);
-                sensor.AddObservation(0f); // không miss
+                sensor.AddObservation(0f);
                 sensor.AddObservation(hit.distance / rayLength);
             }
             else
@@ -151,31 +150,32 @@ public class ParkingAgent : Agent
         if (episodeDone) return;
 
         var a = actions.ContinuousActions;
-        car.SetInputs(a[0], a[1], a[2]);   // ga/lùi, lái, phanh (phanh < 0 = không phanh)
+        car.SetInputs(a[0], a[1], a[2]);
 
-        // Reward dẫn đường dạng "hiệu thế năng": chỉ thưởng khi tiến bộ, không thể ngồi nhặt điểm
         Measure(out float dist, out float align);
         AddReward((prevDist - dist) * distanceShaping);
         AddReward((align - prevAlign) * alignShaping);
-        AddReward(timePenalty);
         prevDist = dist;
         prevAlign = align;
 
-        // Ra ngoài biên map → kết thúc (lưới an toàn nếu tường bị lọt)
+        // Kiểm tra loại mặt sàn bên dưới xe (R, P, C, hoặc tile cấm H, G nếu không có collider chặn ngang)
+        if (!EvaluateGroundTile(dist)) return;
+
+        // Ra ngoài biên map
         if (OutsideMap())
         {
-            Fail("ra khỏi biên map");
+            Fail("ra khỏi biên map", boundaryPenalty);
             return;
         }
 
         // Lật xe hoặc đi quá xa
         if (transform.up.y < 0.3f || dist > maxDistance)
         {
-            Fail("lật xe / đi quá xa");
+            Fail("lật xe / đi quá xa", obstaclePenalty);
             return;
         }
 
-        // Đỗ thành công: đúng chỗ, đúng góc, đứng yên liên tục holdDecisions quyết định
+        // Đỗ thành công
         if (IsParked())
         {
             parkedCount++;
@@ -184,23 +184,91 @@ public class ParkingAgent : Agent
         else parkedCount = 0;
     }
 
-    // Xe có ra ngoài vùng map không (xét trên mặt phẳng X-Z, trong không gian local của Map)
-    bool OutsideMap()
+    // Chiếu tia xuống dưới gầm xe để đọc loại Tile đang chạy qua
+    bool EvaluateGroundTile(float distToTargetSlot)
     {
-        if (map == null) return false;
+        Vector3 origin = transform.position + Vector3.up * 0.5f;
+        if (Physics.Raycast(origin, Vector3.down, out RaycastHit hit, 2.0f, ~0, QueryTriggerInteraction.Collide))
+        {
+            string n = hit.collider.name.ToLower();
+            string t = hit.collider.tag;
 
-        Bounds b = map.GetLocalBounds();
-        Vector3 local = map.transform.InverseTransformPoint(transform.position);
+            // Nếu bánh xe lăn lên tile cấm (H: vỉa hè, G: bồn cây)
+            if (t == "Sidewalk" || n.Contains("sidewalk") || n.Contains("tile_h"))
+            {
+                Fail("leo vỉa hè (H)", sidewalkPenalty);
+                return false;
+            }
+            if (t == "Planting" || n.Contains("planting") || n.Contains("grass") || n.Contains("tile_g"))
+            {
+                Fail("đi vào bồn cây (G)", plantingPenalty);
+                return false;
+            }
 
-        return local.x < b.min.x || local.x > b.max.x ||
-               local.z < b.min.z || local.z > b.max.z;
+            // Đang nằm trong ô đỗ (P)
+            if (hit.collider == slotBox || t == "ParkingSlot" || n.Contains("slot") || n.Contains("tile_p"))
+            {
+                if (distToTargetSlot < wrongSlotDistThreshold)
+                    AddReward(roadStepPenalty);      // Đúng ô đích -> phạt nhẹ như đường chính (-0.001)
+                else
+                    AddReward(wrongSlotPenalty);     // Đè lên ô đỗ khác -> phạt nặng (-0.015)
+                return true;
+            }
+
+            // Đường chính (R)
+            if (t == "Road" || n.Contains("road") || n.Contains("tile_r"))
+            {
+                AddReward(roadStepPenalty);
+                return true;
+            }
+        }
+
+        // Mặc định: sân bãi (C)
+        AddReward(courtStepPenalty);
+        return true;
     }
 
     void OnCollisionEnter(Collision c)
     {
         if (episodeDone) return;
-        if (c.collider.CompareTag("Obstacle"))
-            Fail("va chạm " + c.collider.name);
+
+        Collider col = c.collider;
+        string n = col.name.ToLower();
+        string t = col.tag;
+
+        // Bỏ qua mặt đường phẳng xe đang chạy lên
+        if (t == "Road" || t == "Court" || n.Contains("road") || n.Contains("court") || n.Contains("tile_r") || n.Contains("tile_c"))
+            return;
+
+        if (t == "Decoy" || n.Contains("decoy"))
+            Fail("va chạm xe decoy", decoyPenalty);
+        else if (t == "Lamp" || n.Contains("lamp") || n.Contains("light"))
+            Fail("va chạm cột đèn (L)", lampPenalty);
+        else if (t == "Bush" || n.Contains("bush") || n.Contains("tree"))
+            Fail("va chạm bụi cây (B)", bushPenalty);
+        else if (t == "Planting" || n.Contains("planting") || n.Contains("tile_g"))
+            Fail("va chạm bồn cây (G)", plantingPenalty);
+        else if (t == "Sidewalk" || n.Contains("sidewalk") || n.Contains("tile_h"))
+            Fail("va chạm vỉa hè (H)", sidewalkPenalty);
+        else if (IsObstacleCollider(col))
+            Fail("va chạm vật cản: " + col.name, obstaclePenalty);
+    }
+
+    bool IsObstacleCollider(Collider col)
+    {
+        string t = col.tag;
+        string n = col.name.ToLower();
+        return t == "Obstacle" || t == "Wall" || t == "Decoy" || t == "Lamp" || t == "Bush" || t == "Sidewalk" || t == "Planting"
+            || n.Contains("wall") || n.Contains("obstacle") || n.Contains("decoy") || n.Contains("lamp") || n.Contains("bush") || n.Contains("sidewalk") || n.Contains("planting");
+    }
+
+    bool OutsideMap()
+    {
+        if (map == null) return false;
+        Bounds b = map.GetLocalBounds();
+        Vector3 local = map.transform.InverseTransformPoint(transform.position);
+        return local.x < b.min.x || local.x > b.max.x ||
+               local.z < b.min.z || local.z > b.max.z;
     }
 
     void Succeed()
@@ -211,15 +279,15 @@ public class ParkingAgent : Agent
         EndEpisode();
     }
 
-    void Fail(string why)
+    void Fail(string why, float penalty)
     {
         episodeDone = true;
-        AddReward(collisionPenalty);
-        if (debugLog) Debug.Log($"[{name}] THẤT BẠI ({why}), reward = {GetCumulativeReward():F2}");
+        AddReward(penalty);
+        if (debugLog) Debug.Log($"[{name}] THẤT BẠI ({why} | {penalty}), reward = {GetCumulativeReward():F2}");
         EndEpisode();
     }
 
-    // ---------- HEURISTIC (tự lái để test: đặt Behavior Type = Heuristic Only) ----------
+    // ---------- HEURISTIC ----------
     public override void Heuristic(in ActionBuffers actionsOut)
     {
         var ca = actionsOut.ContinuousActions;
@@ -232,11 +300,8 @@ public class ParkingAgent : Agent
 
     // ---------- HÀM PHỤ ----------
     Vector3 SlotCenter() => slot.transform.TransformPoint(slotBox.center);
-
-    // Trục dài của slot: tự nhận theo kích thước Box Collider (X hoặc Z)
     Vector3 LongAxis() => slotBox.size.x >= slotBox.size.z ? slot.transform.right : slot.transform.forward;
 
-    // Độ lệch giữa mũi xe và trục dài của slot, -90..90 độ (tiến hay lùi vào đều tính như nhau)
     float AngleToAxis()
     {
         Vector3 f = transform.forward; f.y = 0f;
@@ -252,7 +317,7 @@ public class ParkingAgent : Agent
         Vector3 d = SlotCenter() - transform.position;
         d.y = 0f;
         dist = d.magnitude;
-        align = 1f - Mathf.Abs(AngleToAxis()) / 90f;   // 1 = thẳng hàng hoàn toàn
+        align = 1f - Mathf.Abs(AngleToAxis()) / 90f;
     }
 
     bool IsParked()
@@ -260,7 +325,6 @@ public class ParkingAgent : Agent
         if (Mathf.Abs(AngleToAxis()) > maxAngleDeg) return false;
         if (Vel().magnitude > maxSpeedToPark) return false;
 
-        // Cả 4 góc của thân xe phải nằm trong slot
         Vector3 c = carBox.center;
         Vector3 h = carBox.size * 0.5f;
         for (int sx = -1; sx <= 1; sx += 2)
@@ -272,7 +336,6 @@ public class ParkingAgent : Agent
 
     static readonly RaycastHit[] rayBuffer = new RaycastHit[16];
 
-    // Lấy vật gần nhất của tia, bỏ qua collider của chính xe
     bool CastRay(Vector3 origin, Vector3 dir, out RaycastHit best)
     {
         best = default;
@@ -311,8 +374,7 @@ public class ParkingAgent : Agent
             Vector3 dir = Quaternion.Euler(0f, i * 45f, 0f) * transform.forward;
             if (CastRay(origin, dir, out RaycastHit hit))
             {
-                bool obstacle = hit.collider.CompareTag("Obstacle") || hit.collider.name.StartsWith("Wall");
-                Gizmos.color = obstacle ? Color.red : Color.yellow;
+                Gizmos.color = IsObstacleCollider(hit.collider) ? Color.red : Color.yellow;
                 Gizmos.DrawLine(origin, hit.point);
             }
             else
